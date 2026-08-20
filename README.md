@@ -44,6 +44,8 @@ python main.py
 - `/docs` — lista documentos por mes
 - `/sync` — copia incremental de `documentos/` hacia tu vault de Obsidian
   (también con el botón 🔄 Sincronizar del menú)
+- `/uso` — cuota diaria de llamadas IA con barra de progreso
+- `/logs` — últimos errores registrados en `logs/bot.log` (botón 📋 Registros)
 
 ## Estructura del proyecto
 

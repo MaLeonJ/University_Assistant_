@@ -9,6 +9,9 @@ load_dotenv(BASE_DIR / ".env")
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 USAGE_FILE = DATA_DIR / "usage.json"
 
+LOG_DIR = Path(os.getenv("LOG_DIR", BASE_DIR / "logs"))
+LOG_FILE = LOG_DIR / "bot.log"
+
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", BASE_DIR / "documentos"))
 OBSIDIAN_DIR = Path(
     os.getenv(

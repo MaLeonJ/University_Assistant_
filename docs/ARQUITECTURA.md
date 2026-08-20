@@ -54,6 +54,7 @@ Asistente Universitario/
 │   ├── writer.py         # Genera el .md en documentos/año/mes/ + índice mensual
 │   ├── syncer.py         # Copia incremental de documentos/ al vault de Obsidian
 │   ├── usage.py          # Contador diario de llamadas a la IA (data/usage.json)
+│   ├── logsetup.py       # Logging a consola + archivo rotativo (logs/bot.log)
 │   └── config.py         # Rutas, tokens, modelo y límites (.env)
 ├── docs/
 │   ├── ARQUITECTURA.md
@@ -84,6 +85,8 @@ Asistente Universitario/
 - **Búsqueda secuencial por tema** con manejo de errores: si falla la búsqueda de un tema, se marca en el doc y continúa con los demás.
 - **Gemini con reintentos**: si se agota la cuota gratuita diaria, el documento se genera igual con los snippets crudos de búsqueda (degradación elegante).
 - **Capa multi-proveedor** (`llm.py`): `analyzer.py` no sabe qué proveedor usa; cambiar de IA es editar `.env` (decisión orientada a evitar lock-in y a portabilidad del CV).
+- **Logging dual con rotación**: consola + `logs/bot.log` (5 MB × 3 respaldos). Los errores de handlers los captura un error handler global que registra el traceback al archivo sin interrumpir el bot ni enviar mensajes al chat.
+- **Observabilidad desde el propio bot**: `/logs` o el botón 📋 Registros muestran los últimos bloques de error extraídos del archivo (comando y traceback incluidos), para diagnóstico sin abrir la terminal.
 - **Un solo usuario autorizado** (tu chat ID): el bot ignora mensajes de otras personas.
 - **Sincronización manual e incremental** (`/sync` o botón 🔄): copia `documentos/` al vault de Obsidian (`OBSIDIAN_DIR`, default `~/GoogleDrive/Obsidian/Notebook/Universidad`). Compara tamaño + hash MD5 porque rclone/GDrive no preserva mtimes. Solo añade/actualiza; nunca borra nada del vault.
 

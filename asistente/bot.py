@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -14,23 +15,25 @@ from telegram.ext import (
 from .analyzer import analyze_topic, extract_topics_from_image
 from .config import (
     AUTHORIZED_USER_ID,
+    LOG_FILE,
     SEARCH_MAX_RESULTS,
     TELEGRAM_TOKEN,
     validate,
 )
+from .logsetup import setup_logging
 from .parser import parse_message
 from .searcher import search_topic
 from .syncer import sync_documents, sync_text
 from .usage import format_usage, get_usage
 from .writer import list_months, month_label, write_document
 
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=logging.INFO
-)
-logging.getLogger("httpx").setLevel(logging.WARNING)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 MAX_DOCS_MOSTRADOS = 12
+MAX_LOG_BLOCKS = 10
+MAX_LOG_CHARS = 3500
+LOG_LINE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+ ")
 
 HELP_TEXT = (
     "🤖 *Asistente Universitario*\n\n"
@@ -44,7 +47,8 @@ HELP_TEXT = (
     "/menu — abrir el menú de opciones\n"
     "/docs — ver documentos generados\n"
     "/sync — copiar los documentos a tu Obsidian\n"
-    "/uso — cuántas llamadas a la IA te quedan hoy\n\n"
+    "/uso — cuántas llamadas a la IA te quedan hoy\n"
+    "/logs — ver los últimos errores registrados\n\n"
     "📷 También puedes enviar una *foto* del pizarrón o apuntes: la leeré, "
     "detectaré los temas y generaré el documento igual."
 )
@@ -57,6 +61,9 @@ MENU_KEYBOARD = InlineKeyboardMarkup(
         ],
         [
             InlineKeyboardButton("🔄 Sincronizar", callback_data="sync"),
+            InlineKeyboardButton("📋 Registros", callback_data="logs"),
+        ],
+        [
             InlineKeyboardButton("❓ Ayuda", callback_data="ayuda"),
         ],
     ]
@@ -95,6 +102,51 @@ async def uso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.chat.send_action("typing")
     await update.message.reply_text(sync_text(sync_documents()), parse_mode="Markdown")
+
+
+async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(logs_text(), parse_mode="Markdown")
+
+
+def logs_text() -> str:
+    blocks = _recent_error_blocks()
+    if not blocks:
+        return "📋 *Registros*\n\n✅ Sin errores registrados en el archivo actual."
+
+    lines = [f"📋 *Últimos {len(blocks)} errores* (`bot.log`):\n"]
+    for block in reversed(blocks):
+        text = "\n".join(block)
+        if sum(len(l) + 1 for l in lines) + len(text) > MAX_LOG_CHARS:
+            lines.append("_…errores más antiguos omitidos._")
+            break
+        lines.append(f"```{text}```\n")
+    return "\n".join(lines)
+
+
+def _recent_error_blocks() -> list[list[str]]:
+    try:
+        with LOG_FILE.open(encoding="utf-8") as fh:
+            content = fh.read()
+    except OSError:
+        return []
+
+    blocks: list[list[str]] = []
+    for line in content.splitlines():
+        if LOG_LINE.match(line):
+            if line.split(" ")[2] == "ERROR":
+                blocks.append([line])
+            elif blocks:
+                continue
+        elif blocks and len(blocks[-1]) < 40:
+            blocks[-1].append(line)
+
+    return [b for b in blocks if b][-MAX_LOG_BLOCKS:]
+
+
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error(
+        "Excepción no manejada (update=%s)", update, exc_info=context.error
+    )
 
 
 def docs_text() -> str:
@@ -137,6 +189,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await query.answer("Sincronizando...")
         await query.edit_message_text(
             sync_text(sync_documents()), reply_markup=MENU_KEYBOARD, parse_mode="Markdown"
+        )
+    elif query.data == "logs":
+        await query.edit_message_text(
+            logs_text(), reply_markup=MENU_KEYBOARD, parse_mode="Markdown"
         )
     elif query.data == "ayuda":
         await query.edit_message_text(HELP_TEXT, parse_mode="Markdown")
@@ -226,9 +282,11 @@ def main() -> None:
     app.add_handler(CommandHandler("docs", docs_command))
     app.add_handler(CommandHandler("sync", sync_command))
     app.add_handler(CommandHandler("uso", uso_command))
+    app.add_handler(CommandHandler("logs", logs_command))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_error_handler(on_error)
 
     logger.info("Bot iniciado")
     app.run_polling()
