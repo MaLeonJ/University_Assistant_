@@ -5,3 +5,6 @@ documentos/
 data/
 venv/
 logs/
+.coverage
+*.egg-info/
+COMMITES-PENDIENTES.md
