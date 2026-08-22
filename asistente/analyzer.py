@@ -37,17 +37,11 @@ Responde ÚNICAMENTE con el contenido en Markdown."""
 
 def analyze_topic(topic: str, results: list[dict]) -> str:
     if not results:
-        return (
-            f"_No se encontraron resultados de búsqueda para este tema._"
-        )
+        return "_No se encontraron resultados de búsqueda para este tema._"
 
-    sources = "\n".join(
-        f"- **{r['title']}** — {r['snippet']} (URL: {r['url']})" for r in results
-    )
+    sources = "\n".join(f"- **{r['title']}** — {r['snippet']} (URL: {r['url']})" for r in results)
     try:
-        text = generate(
-            PROMPT.format(topic=topic, sources=sources), system=SYSTEM_PROMPT
-        )
+        text = generate(PROMPT.format(topic=topic, sources=sources), system=SYSTEM_PROMPT)
         if not text:
             logger.warning("Respuesta vacía del proveedor de IA para '%s'", topic)
             return _fallback(topic, results)

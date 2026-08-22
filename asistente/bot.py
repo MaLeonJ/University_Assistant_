@@ -82,29 +82,33 @@ async def show_menu(target, header: str = "") -> None:
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        HELP_TEXT, parse_mode="Markdown", reply_markup=MENU_KEYBOARD
-    )
+    assert update.message is not None
+    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown", reply_markup=MENU_KEYBOARD)
 
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     await show_menu(update.message)
 
 
 async def docs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     await update.message.reply_text(docs_text())
 
 
 async def uso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     await update.message.reply_text(format_usage(), parse_mode="Markdown")
 
 
 async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     await update.message.chat.send_action("typing")
     await update.message.reply_text(sync_text(sync_documents()), parse_mode="Markdown")
 
 
 async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
     await update.message.reply_text(logs_text(), parse_mode="Markdown")
 
 
@@ -116,7 +120,7 @@ def logs_text() -> str:
     lines = [f"📋 *Últimos {len(blocks)} errores* (`bot.log`):\n"]
     for block in reversed(blocks):
         text = "\n".join(block)
-        if sum(len(l) + 1 for l in lines) + len(text) > MAX_LOG_CHARS:
+        if sum(len(line) + 1 for line in lines) + len(text) > MAX_LOG_CHARS:
             lines.append("_…errores más antiguos omitidos._")
             break
         lines.append(f"```{text}```\n")
@@ -144,9 +148,7 @@ def _recent_error_blocks() -> list[list[str]]:
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error(
-        "Excepción no manejada (update=%s)", update, exc_info=context.error
-    )
+    logger.error("Excepción no manejada (update=%s)", update, exc_info=context.error)
 
 
 def docs_text() -> str:
@@ -177,6 +179,7 @@ def docs_text() -> str:
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
+    assert query is not None and query.data is not None
     await query.answer()
 
     if query.data == "docs":
@@ -199,9 +202,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def research(update: Update, title: str, topics: list[str]) -> None:
+    assert update.message is not None
     await update.message.reply_text(
-        f"🔎 Investigando *{len(topics)} tema(s)* de «{title}»...\n"
-        "_Esto puede tardar un poco._",
+        f"🔎 Investigando *{len(topics)} tema(s)* de «{title}»...\n_Esto puede tardar un poco._",
         parse_mode="Markdown",
     )
 
@@ -225,10 +228,10 @@ async def research(update: Update, title: str, topics: list[str]) -> None:
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not authorized(update):
+    if not authorized(update) or update.message is None:
         return
 
-    parsed = parse_message(update.message.text)
+    parsed = parse_message(update.message.text or "")
     if parsed is None:
         await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
         return
@@ -238,7 +241,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not authorized(update):
+    if not authorized(update) or update.message is None:
         return
 
     caption = (update.message.caption or "").strip()
@@ -274,6 +277,7 @@ def main() -> None:
     errors = validate()
     if errors:
         raise SystemExit("Configuración incompleta:\n- " + "\n- ".join(errors))
+    assert TELEGRAM_TOKEN is not None
 
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))

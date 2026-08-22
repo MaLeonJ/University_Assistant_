@@ -1,8 +1,9 @@
 import logging
 import time
 
-from .config import SEARCH_MAX_RESULTS
 from ddgs import DDGS
+
+from .config import SEARCH_MAX_RESULTS
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +31,7 @@ def search_topic(topic: str, max_results: int | None = None) -> list[dict]:
                 return results
         except Exception as e:
             last_error = e
-            logger.warning(
-                "Intento %d/%d falló para '%s': %s", attempt, RETRIES, topic, e
-            )
+            logger.warning("Intento %d/%d falló para '%s': %s", attempt, RETRIES, topic, e)
             time.sleep(2 * attempt)
 
     if last_error:

@@ -6,6 +6,7 @@ Unifica Gemini y APIs OpenAI-compatibles (OpenRouter) detrás de una
 
 import base64
 import logging
+from typing import Any
 
 from .config import AI_API_KEY, AI_MODEL, AI_PROVIDER
 
@@ -34,9 +35,7 @@ def generate(
     raise ValueError(f"Proveedor de IA no soportado: {AI_PROVIDER}")
 
 
-def _generate_gemini(
-    prompt: str, system: str, images: list[tuple[bytes, str]] | None
-) -> str:
+def _generate_gemini(prompt: str, system: str, images: list[tuple[bytes, str]] | None) -> str:
     from google import genai
     from google.genai import types
 
@@ -58,17 +57,16 @@ def _get_openai_client():
     if _openai_client is None:
         from openai import OpenAI
 
-        _openai_client = OpenAI(
-            api_key=AI_API_KEY, base_url=OPENAI_BASE_URLS[AI_PROVIDER]
-        )
+        _openai_client = OpenAI(api_key=AI_API_KEY, base_url=OPENAI_BASE_URLS[AI_PROVIDER])
     return _openai_client
 
 
 def _generate_openai_compatible(
     prompt: str, system: str, images: list[tuple[bytes, str]] | None
 ) -> str:
+    content: str | list[dict[str, Any]]
     if images:
-        content: list[dict] = [{"type": "text", "text": prompt}]
+        content = [{"type": "text", "text": prompt}]
         for data, mime in images:
             b64 = base64.b64encode(data).decode("ascii")
             content.append(

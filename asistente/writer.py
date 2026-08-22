@@ -68,7 +68,7 @@ def write_document(
     lines += [f"{i}. {t}" for i, t in enumerate(topics, 1)]
     lines += ["", "---", ""]
 
-    for i, (topic, section) in enumerate(zip(topics, sections), 1):
+    for i, (topic, section) in enumerate(zip(topics, sections, strict=True), 1):
         lines += [f"## {i}. {topic}", "", section.strip(), "", "---", ""]
 
     lines += _sources_section(results_by_topic)
@@ -123,9 +123,7 @@ def list_months() -> list[tuple[Path, list[Path]]]:
         return months
     years = sorted((d for d in OUTPUT_DIR.iterdir() if d.is_dir()), reverse=True)
     for year_dir in years:
-        meses = sorted(
-            (d for d in year_dir.iterdir() if d.is_dir()), reverse=True
-        )
+        meses = sorted((d for d in year_dir.iterdir() if d.is_dir()), reverse=True)
         for m in meses:
             docs = _docs_in(m)
             if docs:
@@ -168,13 +166,16 @@ def _sources_section(results_by_topic: dict[str, list[dict]]) -> list[str]:
     count = 0
 
     for topic, results in results_by_topic.items():
-        topic_sources = [r for r in results if r["url"] and r["url"] not in seen]
+        topic_sources = []
+        for r in results:
+            if r["url"] and r["url"] not in seen:
+                seen.add(r["url"])
+                topic_sources.append(r)
         if not topic_sources:
             continue
         lines.append(f"**{topic}**")
         lines.append("")
         for r in topic_sources:
-            seen.add(r["url"])
             count += 1
             title = r["title"].strip() or r["url"]
             lines.append(f"{count}. [{title}]({r['url']})")
