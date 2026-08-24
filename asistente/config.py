@@ -8,6 +8,8 @@ load_dotenv(BASE_DIR / ".env")
 
 DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 USAGE_FILE = DATA_DIR / "usage.json"
+CACHE_DB = DATA_DIR / "cache.db"
+CACHE_TTL_DAYS = int(os.getenv("CACHE_TTL_DAYS", "7"))
 
 LOG_DIR = Path(os.getenv("LOG_DIR", BASE_DIR / "logs"))
 LOG_FILE = LOG_DIR / "bot.log"
@@ -33,6 +35,9 @@ DEFAULT_MODELS = {
     "openrouter": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
 }
 AI_MODEL = os.getenv("AI_MODEL") or DEFAULT_MODELS.get(AI_PROVIDER, "")
+AI_FALLBACK_MODELS = tuple(
+    m.strip() for m in os.getenv("AI_FALLBACK_MODELS", "").split(",") if m.strip()
+)
 
 VALID_PROVIDERS = ("gemini", "openrouter")
 

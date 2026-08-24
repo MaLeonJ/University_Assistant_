@@ -3,6 +3,7 @@ from typing import ClassVar
 import pytest
 
 import asistente.searcher as searcher
+from asistente.searcher import SearchResult
 
 
 class FakeDDGS:
@@ -34,7 +35,7 @@ def fake_ddgs(monkeypatch):
 def test_busqueda_exitosa_al_primer_intento(fake_ddgs):
     fake_ddgs.efectos = [[{"title": "T", "href": "https://x.com", "body": "resumen"}]]
     resultados = searcher.search_topic("tema")
-    assert resultados == [{"title": "T", "url": "https://x.com", "snippet": "resumen"}]
+    assert resultados == [SearchResult(title="T", url="https://x.com", snippet="resumen")]
 
 
 def test_reintenta_tras_fallos_y_recupera(fake_ddgs):

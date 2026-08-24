@@ -1,3 +1,4 @@
+import threading
 from datetime import date, timedelta
 
 from asistente.usage import format_usage, get_usage, register_call
@@ -7,6 +8,15 @@ def test_register_call_incrementa(usage_file):
     assert register_call() == 1
     assert register_call() == 2
     assert get_usage() == (2, 100)
+
+
+def test_register_call_es_seguro_en_paralelo(usage_file):
+    hilos = [threading.Thread(target=register_call) for _ in range(50)]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join()
+    assert get_usage() == (50, 100)
 
 
 def test_contador_se_reinicia_cada_dia(write_usage):

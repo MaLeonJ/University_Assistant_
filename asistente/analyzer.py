@@ -2,6 +2,7 @@ import json
 import logging
 
 from .llm import generate
+from .searcher import SearchResult
 from .usage import register_call
 
 logger = logging.getLogger(__name__)
@@ -35,11 +36,11 @@ Requisitos:
 Responde ÚNICAMENTE con el contenido en Markdown."""
 
 
-def analyze_topic(topic: str, results: list[dict]) -> str:
+def analyze_topic(topic: str, results: list[SearchResult]) -> str:
     if not results:
         return "_No se encontraron resultados de búsqueda para este tema._"
 
-    sources = "\n".join(f"- **{r['title']}** — {r['snippet']} (URL: {r['url']})" for r in results)
+    sources = "\n".join(f"- **{r.title}** — {r.snippet} (URL: {r.url})" for r in results)
     try:
         text = generate(PROMPT.format(topic=topic, sources=sources), system=SYSTEM_PROMPT)
         if not text:
@@ -52,15 +53,24 @@ def analyze_topic(topic: str, results: list[dict]) -> str:
         return _fallback(topic, results)
 
 
-def _fallback(topic: str, results: list[dict]) -> str:
+FALLBACK_PREFIX = "_Contenido generado sin IA"
+
+
+def is_fallback(text: str) -> bool:
+    """True si el texto es el placeholder de error/cuota, no un análisis real."""
+    return text.startswith(FALLBACK_PREFIX)
+
+
+def _fallback(topic: str, results: list[SearchResult]) -> str:
     lines = [
-        "_Contenido generado sin IA (cuota agotada o error). "
+        f"{FALLBACK_PREFIX} "
+        "(cuota agotada o error). "
         "A continuación los resúmenes crudos de las fuentes:_",
         "",
     ]
     for r in results:
-        snippet = r["snippet"]
-        lines.append(f"- **{r['title']}**: {snippet}")
+        snippet = r.snippet
+        lines.append(f"- **{r.title}**: {snippet}")
     return "\n".join(lines)
 
 

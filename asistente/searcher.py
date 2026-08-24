@@ -1,5 +1,6 @@
 import logging
 import time
+from dataclasses import dataclass
 
 from ddgs import DDGS
 
@@ -10,9 +11,16 @@ logger = logging.getLogger(__name__)
 RETRIES = 3
 
 
-def search_topic(topic: str, max_results: int | None = None) -> list[dict]:
+@dataclass(frozen=True, slots=True)
+class SearchResult:
+    title: str
+    url: str
+    snippet: str
+
+
+def search_topic(topic: str, max_results: int | None = None) -> list[SearchResult]:
     max_results = max_results or SEARCH_MAX_RESULTS
-    results = []
+    results: list[SearchResult] = []
     last_error = None
 
     for attempt in range(1, RETRIES + 1):
@@ -21,11 +29,11 @@ def search_topic(topic: str, max_results: int | None = None) -> list[dict]:
                 raw = ddgs.text(f"{topic} explicación", max_results=max_results)
                 for r in raw:
                     results.append(
-                        {
-                            "title": r.get("title", ""),
-                            "url": r.get("href", ""),
-                            "snippet": r.get("body", ""),
-                        }
+                        SearchResult(
+                            title=r.get("title", ""),
+                            url=r.get("href", ""),
+                            snippet=r.get("body", ""),
+                        )
                     )
             if results:
                 return results

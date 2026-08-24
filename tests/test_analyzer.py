@@ -1,6 +1,7 @@
 import pytest
 
 import asistente.analyzer as analyzer
+from asistente.searcher import SearchResult
 
 
 @pytest.fixture(autouse=True)
@@ -10,7 +11,7 @@ def registro(monkeypatch):
     return llamadas
 
 
-RESULTADOS = [{"title": "Fuente", "url": "https://x.com", "snippet": "resumen"}]
+RESULTADOS = [SearchResult(title="Fuente", url="https://x.com", snippet="resumen")]
 
 
 def test_sin_resultados_no_consumen_ia(registro):

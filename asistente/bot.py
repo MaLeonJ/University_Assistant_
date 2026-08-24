@@ -12,7 +12,7 @@ from telegram.ext import (
     filters,
 )
 
-from .analyzer import analyze_topic, extract_topics_from_image
+from .analyzer import extract_topics_from_image
 from .config import (
     AUTHORIZED_USER_ID,
     LOG_FILE,
@@ -22,7 +22,7 @@ from .config import (
 )
 from .logsetup import setup_logging
 from .parser import parse_message
-from .searcher import search_topic
+from .pipeline import research_topics
 from .syncer import sync_documents, sync_text
 from .usage import format_usage, get_usage
 from .writer import list_months, month_label, write_document
@@ -207,15 +207,10 @@ async def research(update: Update, title: str, topics: list[str]) -> None:
         f"🔎 Investigando *{len(topics)} tema(s)* de «{title}»...\n_Esto puede tardar un poco._",
         parse_mode="Markdown",
     )
+    await update.message.chat.send_action("typing")
 
-    sections = []
-    results_by_topic: dict[str, list[dict]] = {}
-    for i, topic in enumerate(topics, 1):
-        await update.message.chat.send_action("typing")
-        results = search_topic(topic, SEARCH_MAX_RESULTS)
-        results_by_topic[topic] = results
-        sections.append(analyze_topic(topic, results))
-        logger.info("[%d/%d] %s", i, len(topics), topic)
+    sections, results_by_topic = await research_topics(topics, SEARCH_MAX_RESULTS)
+    logger.info("Investigación completa: %s", title)
 
     path = write_document(title, topics, sections, results_by_topic)
 

@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import asistente.bot as bot
+from asistente.searcher import SearchResult
 
 
 class FakeChat:
@@ -59,9 +60,12 @@ def run(coro):
 @pytest.fixture(autouse=True)
 def pipeline_rapido(monkeypatch, output_dirs):
     """Desconecta la investigación real y neutraliza la restricción de usuario."""
-    resultados = [{"title": "Fuente", "url": "https://x.com", "snippet": "s"}]
-    monkeypatch.setattr(bot, "search_topic", lambda topic, n: resultados)
-    monkeypatch.setattr(bot, "analyze_topic", lambda topic, results: "SECCIÓN")
+    resultados = [SearchResult(title="Fuente", url="https://x.com", snippet="s")]
+
+    async def fake_research(topics, max_results=None):
+        return ["SECCIÓN" for _ in topics], dict.fromkeys(topics, resultados)
+
+    monkeypatch.setattr(bot, "research_topics", fake_research)
     monkeypatch.setattr(bot, "AUTHORIZED_USER_ID", 0)
 
 

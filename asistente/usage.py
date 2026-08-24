@@ -1,10 +1,13 @@
 import json
 import logging
+import threading
 from datetime import date
 
 from .config import AI_DAILY_LIMIT, USAGE_FILE
 
 logger = logging.getLogger(__name__)
+
+_lock = threading.Lock()
 
 
 def _load() -> dict:
@@ -22,11 +25,12 @@ def _save(data: dict) -> None:
 
 
 def register_call() -> int:
-    data = _load()
-    data["date"] = str(date.today())
-    data["count"] = data.get("count", 0) + 1
-    _save(data)
-    return data["count"]
+    with _lock:
+        data = _load()
+        data["date"] = str(date.today())
+        data["count"] = data.get("count", 0) + 1
+        _save(data)
+        return data["count"]
 
 
 def get_usage() -> tuple[int, int]:

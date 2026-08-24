@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 
+from asistente.searcher import SearchResult
 from asistente.writer import (
     _doc_title,
     _docs_in,
@@ -15,9 +16,9 @@ from asistente.writer import (
 
 RESULTADOS = {
     "tema 1": [
-        {"title": "Fuente A", "url": "https://a.com", "snippet": "s1"},
-        {"title": "Fuente B", "url": "https://b.com", "snippet": "s2"},
-        {"title": "Duplicada", "url": "https://a.com", "snippet": "s3"},
+        SearchResult(title="Fuente A", url="https://a.com", snippet="s1"),
+        SearchResult(title="Fuente B", url="https://b.com", snippet="s2"),
+        SearchResult(title="Duplicada", url="https://a.com", snippet="s3"),
     ],
 }
 
@@ -93,7 +94,7 @@ def test_list_months_ordena_descendente(output_dirs):
 
 def test_sources_section_sin_fuentes_devuelve_vacio():
     assert _sources_section({}) == []
-    assert _sources_section({"t": [{"title": "", "url": "", "snippet": ""}]}) == []
+    assert _sources_section({"t": [SearchResult(title="", url="", snippet="")]}) == []
 
 
 def test_sources_section_deduplica_urls():

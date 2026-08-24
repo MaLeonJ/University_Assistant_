@@ -3,6 +3,7 @@ from pathlib import Path
 
 from .config import OUTPUT_DIR
 from .parser import slugify
+from .searcher import SearchResult
 
 MESES = (
     "enero",
@@ -35,7 +36,7 @@ def write_document(
     title: str,
     topics: list[str],
     sections: list[str],
-    results_by_topic: dict[str, list[dict]],
+    results_by_topic: dict[str, list[SearchResult]],
 ) -> Path:
     now = datetime.now()
     doc_dir = month_dir(now)
@@ -160,16 +161,16 @@ def _hora(path: Path) -> str:
     return ""
 
 
-def _sources_section(results_by_topic: dict[str, list[dict]]) -> list[str]:
+def _sources_section(results_by_topic: dict[str, list[SearchResult]]) -> list[str]:
     lines = ["## Fuentes consultadas", ""]
     seen: set[str] = set()
     count = 0
 
     for topic, results in results_by_topic.items():
-        topic_sources = []
+        topic_sources: list[SearchResult] = []
         for r in results:
-            if r["url"] and r["url"] not in seen:
-                seen.add(r["url"])
+            if r.url and r.url not in seen:
+                seen.add(r.url)
                 topic_sources.append(r)
         if not topic_sources:
             continue
@@ -177,8 +178,8 @@ def _sources_section(results_by_topic: dict[str, list[dict]]) -> list[str]:
         lines.append("")
         for r in topic_sources:
             count += 1
-            title = r["title"].strip() or r["url"]
-            lines.append(f"{count}. [{title}]({r['url']})")
+            title = r.title.strip() or r.url
+            lines.append(f"{count}. [{title}]({r.url})")
         lines.append("")
 
     if count == 0:

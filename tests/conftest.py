@@ -33,6 +33,17 @@ def output_dirs(tmp_path, monkeypatch):
     return {"out": out, "vault": vault}
 
 
+@pytest.fixture(autouse=True)
+def cache_db_tmp(tmp_path, monkeypatch):
+    """Redirige el cache SQLite a un archivo temporal."""
+    import asistente.cache as cache
+
+    db = tmp_path / "data" / "cache.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(cache, "CACHE_DB", str(db))
+    return db
+
+
 @pytest.fixture
 def usage_file(tmp_path, monkeypatch):
     """Redirige el contador diario a un archivo temporal."""
