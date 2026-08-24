@@ -79,6 +79,20 @@ Asistente Universitario/
    - Sección por tema: explicación + fuentes consultadas.
 6. **Respuesta** — el bot confirma al usuario con la ruta del archivo creado.
 
+## Calidad y tooling
+
+- **Empaquetado**: `pyproject.toml` único — dependencias runtime fijadas (`==`),
+  extras `dev` (pytest, ruff, mypy, pre-commit), configuración centralizada de
+  todas las herramientas. Instalación: `pip install -e ".[dev]"`.
+- **Ruff**: lint (E,W,F,I,UP,B,SIM,C4,RUF) + formateo canónico. Los prompts de
+  `analyzer.py` quedan exentos del límite de línea (prosa).
+- **Mypy**: chequeo estricto sobre `asistente/` y `tests/`. Las invariantes de
+  PTB (message/query presentes por filtro) se documentan con `assert`.
+- **Pytest**: 91 tests, 97% de cobertura con ramas. Módulos puros testeables
+  directamente; searcher/llm/analyzer/bot con stubs (sin red ni claves).
+  Fixtures aíslan `documentos/`, vault, `usage.json` y el archivo de log.
+- **Pre-commit**: higiene de archivos + ruff-check --fix + ruff-format.
+
 ## Decisiones de diseño
 
 - **Polling** en vez de webhook: más simple para uso personal/local.

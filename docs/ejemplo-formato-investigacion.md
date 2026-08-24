@@ -93,7 +93,7 @@ destino.mkdir(parents=True, exist_ok=True)
 for archivo in origen.glob("*"):
     if archivo.is_file():
         archivo_destino = destino / archivo.name
-        
+
         # Evitar sobrescribir si el archivo ya existe
         if archivo_destino.exists():
             print(f"Omitido (ya existe): {archivo.name}")

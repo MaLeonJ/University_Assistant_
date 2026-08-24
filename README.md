@@ -16,9 +16,25 @@ temario corte 1: qué es bases de datos, bases de datos relacionales, modelo E-R
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[dev]"
 cp .env.example .env
 ```
+
+## Calidad
+
+| Herramienta | Comando | Estado |
+|---|---|---|
+| Tests | `pytest` | 91 tests, 97% de cobertura |
+| Lint + formato | `ruff check . && ruff format .` | limpio |
+| Tipado | `mypy asistente/ tests/` | estricto |
+| Hooks | `pre-commit install` | ruff + higiene de archivos |
+
+Las dependencias están fijadas (`==`) en `pyproject.toml`.
+
+## Documentación
+
+- `docs/ARQUITECTURA.md` — diseño de alto nivel y decisiones
+- `docs/FUNCIONAMIENTO-INTERNO.md` — guía exhaustiva: librerías, funciones, flujos y pruebas
 
 ## Configuración (.env)
 
