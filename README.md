@@ -24,7 +24,7 @@ cp .env.example .env
 
 | Herramienta | Comando | Estado |
 |---|---|---|
-| Tests | `pytest` | 91 tests, 97% de cobertura |
+| Tests | `pytest` | 108 tests, 97% de cobertura |
 | Lint + formato | `ruff check . && ruff format .` | limpio |
 | Tipado | `mypy asistente/ tests/` | estricto |
 | Hooks | `pre-commit install` | ruff + higiene de archivos |
@@ -44,6 +44,7 @@ Las dependencias están fijadas (`==`) en `pyproject.toml`.
 | `AI_PROVIDER` | `gemini` (default) u `openrouter` |
 | `AI_API_KEY` | Gemini: https://aistudio.google.com/apikey · OpenRouter: https://openrouter.ai/keys |
 | `AI_MODEL` | (opcional) Modelo del proveedor; cada uno tiene default |
+| `AI_FALLBACK_MODELS` | (opcional) Modelos de respaldo separados por coma; se prueban en orden si el principal falla |
 | `AUTHORIZED_USER_ID` | Tu ID: escribirle a [@userinfobot](https://t.me/userinfobot) |
 | `OBSIDIAN_DIR` | (opcional) Carpeta de tu vault donde `/sync` copia los docs. Default: `~/GoogleDrive/Obsidian/Notebook/Universidad` |
 
@@ -77,6 +78,9 @@ docs/                ARQUITECTURA.md y ejemplos
 ## Features
 
 - Texto y fotos del pizarrón (visión multimodal, sin OCR externo)
+- Investigación de todos los temas en paralelo
+- Cache SQLite: temas repetidos no gastan cuota de IA
+- Fallback de modelos con circuit breaker si el proveedor falla
 - Índice mensual auto-regenerado estilo Obsidian (dataview + wikilinks)
 - Contador diario de llamadas IA (`/uso`)
 - Sincronización incremental al vault (`/sync`)

@@ -52,7 +52,7 @@ código documenta esa invariante con `assert`.
 ### ddgs `==9.15.0`
 Cliente de búsqueda DuckDuckGo sin API key. Uso:
 ```python
-with DDGS() as ddgs:                      # context manager (sesión HTTP)
+with DDGS() as ddgs:  # context manager (sesión HTTP)
     ddgs.text(f"{tema} explicación", max_results=N)
 ```
 Devuelve iterables de dicts con claves `title`, `href`, `body` — el proyecto los
@@ -97,25 +97,29 @@ directorio desde donde se lance `python main.py`.
 
 ```
 main.py ──────────────▶ bot.py (orquestador Telegram)
-                          │
-     ┌────────┬──────────┼───────────┬────────────┐
-     ▼        ▼          ▼           ▼            ▼
-  parser   searcher   analyzer    writer      syncer
-              │         │                        │
-              │         ▼                        ▼
-              │       llm.py                    (config)
-              │      ┌────┴────┐
-              │   gemini   openai-compat
-              ▼
-           (config)
-  usage.py ◀── analyzer (registra consumo)
+                           │
+      ┌────────┬──────────┼───────────┬────────────┐
+      ▼        ▼          ▼           ▼            ▼
+   parser   pipeline   writer      syncer      (comandos)
+               │          │                        │
+      ┌────────┴─────┐    │                        ▼
+      ▼              ▼    │                     (config)
+  searcher       analyzer │
+      │              │    │
+      └──▶ cache ◀───┘    │
+             │            │
+             ▼            ▼
+          (config)      llm.py ──▶ gemini / openai-compat (+ fallback, breaker)
+                               │
+                               ▼
+                            usage.py (registra consumo)
   logsetup.py ◀── bot.py (al importar configura logging global)
   config.py ◀── TODOS (única fuente de verdad de rutas/tokens/env)
 ```
 
 Reglas: `config.py` no depende de nadie; `llm.py` no sabe de prompts ni de
-Telegram; `analyzer.py` conoce prompts + llm + usage; `bot.py` orquesta pero no
-implementa lógica de negocio.
+Telegram; `analyzer.py` conoce prompts + llm + usage; `pipeline.py` orquesta
+búsqueda+cache+análisis por tema; `bot.py` solo traduce Telegram ↔ pipeline.
 
 ---
 
@@ -156,25 +160,31 @@ cualquiera: útil para tests). No autorizado → return silencioso.
 `slugify(text)`: minúsculas → tabla áéíóúñ→aeioun → `re.sub('[^a-z0-9]+' , '-')`
 → trim de guiones → máximo 60 chars → fallback `"documento"`.
 
-### 5.3 Investigación — `bot.research(update, title, topics)`
-Avisa al usuario, luego **secuencialmente** por cada tema:
+### 5.3 Investigación — `bot.research(update, title, topics)` → `pipeline.research_topics`
+Avisa al usuario y delega en el **pipeline async**: todos los temas corren
+**en paralelo** (`asyncio.gather`); cada tema ejecuta su secuencia en un thread
+de sistema (`asyncio.to_thread`) porque ddgs, SQLite y los SDK de IA son
+bloqueantes. Por tema:
 
-**a) Búsqueda — `searcher.search_topic(topic, max_results)`**
-Consulta literal `"{topic} explicación"` (el sufijo mejora resultados
-didácticos). Hasta `RETRIES=3` intentos; entre fallo y fallo duerme
-`2*intento` s (backoff simple). Acumula resultados normalizados y retorna al
-primer intento con datos. Si todo falla → lista vacía (no lanza).
+**a) Búsqueda con cache — `cache.get_search` / `searcher.search_topic`**
+Si hay entrada vigente en `data/cache.db` (TTL `CACHE_TTL_DAYS`, default 7
+días) se reutiliza sin tocar la red. Si no, consulta literal
+`"{topic} explicación"` (el sufijo mejora resultados didácticos). Hasta
+`RETRIES=3` intentos; entre fallo y fallo duerme `2*intento` s (backoff).
+Un resultado exitoso se guarda en cache. Si todo falla → lista vacía (no lanza).
 
-**b) Síntesis — `analyzer.analyze_topic(topic, results)`**
-Sin resultados → nota informativa (no gasta IA). Con resultados arma la lista
-de fuentes `- **título** — snippet (URL: url)` y la inyecta en `PROMPT`
-(instrucciones: definición/contexto, conceptos clave con cursivas y término en
-inglés, ejemplos concretos/código, aplicaciones, tabla final, 600–1000
-palabras, español, sin enlaces en el cuerpo). Todo bajo `SYSTEM_PROMPT`
-(persona didáctica, no inventar).
-Llama `llm.generate(...)`. Solo si hay texto no-vacío registra consumo
-(`register_call()`). Cualquier excepción o respuesta vacía → `_fallback()`:
-documento igual generado con snippets crudos (degradación elegante).
+**b) Síntesis con cache — `cache.analysis_key` / `analyzer.analyze_topic`**
+La clave del análisis es `sha256(proveedor|modelo|tema|URLs ordenadas)`: si
+cambian las fuentes o el modelo, cambia la clave y se regenera. Sin acierto,
+se llama a `analyze_topic`: sin resultados → nota informativa (no gasta IA);
+con resultados arma la lista `- **título** — snippet (URL: url)` y la inyecta
+en `PROMPT` (instrucciones: definición/contexto, conceptos clave con cursivas
+y término en inglés, ejemplos concretos/código, aplicaciones, tabla final,
+600–1000 palabras, español, sin enlaces en el cuerpo), bajo `SYSTEM_PROMPT`
+(persona didáctica, no inventar). Solo si hay texto real registra consumo
+(`register_call()`, protegido con lock por los threads). Excepción o texto
+vacío → `_fallback()` con snippets crudos; los fallbacks **no se cachean**
+(`is_fallback`).
 
 ### 5.4 Escritura — `writer.write_document(title, topics, sections, results_by_topic)`
 Ruta: `documentos/<YYYY>/<MM-mes>/<DD_HH-MM>_<slug>.md`; si existe, sufijo
@@ -230,12 +240,24 @@ Función única pública:
 generate(prompt: str, *, system: str, images: list[tuple[bytes, str]] | None = None) -> str
 ```
 
-Dispatch por `config.AI_PROVIDER`:
+**Cadena de modelos con circuit breaker.** `generate()` arma la lista de
+candidatos `[AI_MODEL, *AI_FALLBACK_MODELS]` (deduplicada, orden estable) y la
+recorre: el primer modelo que responda gana. Cada modelo tiene su
+`CircuitBreaker` (umbral `BREAKER_THRESHOLD=3`, enfriamiento
+`BREAKER_COOLDOWN=300 s`, reloj `time.monotonic`): tras 3 fallos consecutivos
+queda "abierto" y se omite sin gastar red hasta que pase el enfriamiento; un
+éxito reinicia fallos y cierra el breaker. Si todos fallan o están abiertos →
+se relanza el último error (o `RuntimeError("Ningún modelo disponible…")`).
+`reset_breakers()` existe para tests.
+
+Dispatch por `config.AI_PROVIDER` (validado **antes** de la cadena):
 - `"gemini"` → `_generate_gemini` (SDK propio; imágenes vía
   `types.Part.from_bytes`; `system_instruction` en config; silencia el warning
   AFC del SDK bajando el logger `google_genai` a ERROR).
 - `"openrouter"` → `_generate_openai_compatible` (cliente `openai` con
-  `base_url` de `OPENAI_BASE_URLS`; imágenes como data-URI base64).
+  `base_url` de `OPENAI_BASE_URLS`; imágenes como data-URI base64;
+  envía `extra_body={"reasoning": {"enabled": False}}` para que los modelos de
+  razonamiento no filtren su cadena de pensamiento en `content`).
 - Otro → `ValueError`. Sin `AI_API_KEY` → `RuntimeError`.
 
 Detalles finos:
@@ -314,7 +336,8 @@ comando afectado no respondió.
 | Archivo | Quién escribe | Formato / política |
 |---|---|---|
 | `documentos/**.md` | writer | jerárquico año/mes, frontmatter, índice mensual |
-| `data/usage.json` | usage | `{"date": "YYYY-MM-DD", "count": N}`; si la fecha difiere de hoy, `_load()` descarta → reset diario automático |
+| `data/usage.json` | usage | `{"date": "YYYY-MM-DD", "count": N}`; si la fecha difiere de hoy, `_load()` descarta → reset diario automático; escrituras protegidas con lock (threads del pipeline) |
+| `data/cache.db` | cache | SQLite: tabla `searches` (TTL) y `analyses` (clave contenido); conexiones de vida corta con `busy_timeout=5000`; si la BD está corrupta degrada sin cache, sin romper |
 | `logs/bot.log` (+`.1`…`.3`) | logsetup | texto plano, rota a 5 MB, conserva 3 respaldos |
 | `.env` | humano | tokens; jamás commiteado |
 
@@ -334,12 +357,15 @@ cwd). Variables (todas con default sensato):
 | `AI_PROVIDER` | gemini | `gemini \| openrouter` (`VALID_PROVIDERS`) |
 | `AI_API_KEY` | — | requerida |
 | `AI_MODEL` | según proveedor | override puntual |
+| `AI_FALLBACK_MODELS` | vacío | modelos de respaldo (coma); orden = prioridad |
+| `CACHE_TTL_DAYS` | 7 | vigencia del cache de búsquedas |
 | `AI_DAILY_LIMIT` | 100 | solo cosmético (/uso) |
 | `SEARCH_MAX_RESULTS` | 5 | fuentes por tema |
 | `OUTPUT_DIR` / `OBSIDIAN_DIR` / `DATA_DIR` / `LOG_DIR` | rutas del repo/vault | redirigibles (clave para tests) |
 
 Defaults de modelo: `gemini-3.5-flash` · `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`.
-Los catálogos gratuitos rotan; si un modelo muere, cambiar `AI_MODEL`.
+Los catálogos gratuitos rotan; con `AI_FALLBACK_MODELS` la cadena salta sola a
+un modelo de respaldo si el principal muere o se satura.
 
 ---
 
@@ -351,7 +377,9 @@ Principio: **lógica pura directo; bordes con stubs**.
 |---|---|
 | parser, writer, syncer, usage | funciones puras sobre carpetas temporales (`tmp_path`) — nada de mocks |
 | searcher | clase `FakeDDGS` con lista de efectos (excepción o datos); `time.sleep` parcheado |
-| llm | stubs del SDK: `StubCompletions` captura kwargs del chat; `google.genai.Client` reemplazado por stub que captura model/contents/config |
+| cache | SQLite en `tmp_path` (fixture autouse `cache_db_tmp`); roundtrips, TTL, claves, BD corrupta |
+| pipeline | `search_topic`/`analyze_topic` fakes; orden, paralelismo medido por reloj, propagación de `max_results`, acierto de cache y no-cacheo de fallbacks |
+| llm | stubs del SDK: `StubCompletions`/`ScriptedCompletions` con efectos ordenados; breaker probado con umbral/cooldown/parcheo de `time.monotonic`; `google.genai.Client` reemplazado por stub que captura model/contents/config |
 | analyzer | `generate` y `register_call` monkeyparcheados; se prueban éxito, vacío, excepción y JSON de visión |
 | config.validate | combinaciones de env incompleta/inválida |
 | bot | fakes `FakeMessage/FakeQuery/FakeChat` (grabadoras de llamadas); handlers async ejecutados con `asyncio.run`; pipeline de investigación parcheado |
@@ -359,14 +387,17 @@ Principio: **lógica pura directo; bordes con stubs**.
 Fixtures (`tests/conftest.py`):
 - `output_dirs` — redirige `OUTPUT_DIR`/`OBSIDIAN_DIR` de writer y syncer.
 - `usage_file` / `write_usage` — contador temporal.
+- `cache_db_tmp` (autouse) — cache SQLite en `tmp_path`; ningún test toca el
+  `data/cache.db` real.
 - autouse `sin_log_a_archivo` — desmonta el RotatingFileHandler durante los
   tests (no contaminan tu `bot.log` real).
 - En test_bot, autouse además neutraliza `AUTHORIZED_USER_ID=0` (el `.env`
   real no debe filtrarse en las pruebas).
 
-Estado: **91 tests, 97% cobertura con ramas**, ruff (lint+format) y mypy
+Estado: **108 tests, 97% cobertura con ramas**, ruff (lint+format) y mypy
 estrictos en `asistente/` y `tests/`, hooks pre-commit (higiene + ruff).
-La suite cazó un bug real: dedup de fuentes solo entre temas, no intra-tema.
+La suite cazó dos bugs reales: dedup de fuentes solo entre temas (no
+intra-tema) y la carrera de escritura de `usage.json` al paralelizar.
 
 Comandos:
 ```bash
@@ -381,8 +412,11 @@ pre-commit run --all-files
 ## 13. Decisiones técnicas y sus razones (resumen honesto)
 
 - **Polling, no webhook** — uso personal local: cero infraestructura.
-- **Secuencial por tema** — simple y protege cuota; el paralelismo
-  (`asyncio.gather`) es la Fase 3 del roadmap.
+- **Paralelo con threads, no async nativo** — ddgs, sqlite3 y los SDK de IA son
+  bloqueantes: `to_thread` los aprovecha desde el event loop de PTB sin
+  reescribir nada; `gather` mantiene el orden de secciones.
+- **Cache con clave de contenido, no solo tema** — un análisis se reutiliza
+  mientras no cambien fuentes ni modelo; así nunca sirve contenido viejo.
 - **MD5, no mtimes** — consecuencia directa del montaje rclone.
 - **Fallback en cascada** — búsqueda vacía o IA caída nunca rompen: el
   documento sale con snippets crudos y queda marcado.
@@ -395,12 +429,13 @@ pre-commit run --all-files
 
 ## 14. Límites actuales (roadmap activo)
 
-Fase 3 pendiente: paralelizar temas, cache SQLite de búsquedas/análisis,
-dataclass `SearchResult`, cadena de proveedores con circuit breaker.
+Fase 3 completada: paralelismo por tema, cache SQLite, dataclass
+`SearchResult`, cadena de fallback con circuit breaker.
 Fase 4-5: full-text search (`/buscar`), export PDF, systemd/Docker.
 
 ## 15. Orden sugerido de lectura del código
 
 1. `config.py` → 2. `parser.py` → 3. `searcher.py` → 4. `llm.py` →
-5. `analyzer.py` → 6. `writer.py` → 7. `syncer.py` → 8. `usage.py` →
-9. `logsetup.py` → 10. `bot.py` (el más grande, deja el orquestador para el final).
+5. `analyzer.py` → 6. `cache.py` → 7. `pipeline.py` → 8. `writer.py` →
+9. `syncer.py` → 10. `usage.py` → 11. `logsetup.py` → 12. `bot.py`
+(el más grande, deja el orquestador para el final).

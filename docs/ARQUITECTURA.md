@@ -48,8 +48,10 @@ Asistente Universitario/
 │   ├── __init__.py
 │   ├── bot.py            # Handlers de Telegram y menú
 │   ├── parser.py         # Detecta intención: ¿es un temario/lista de temas?
+│   ├── pipeline.py       # Orquestador async: busca+analiza todos los temas en paralelo, con cache
 │   ├── searcher.py       # Búsqueda web de cada tema (aislado, reemplazable)
-│   ├── llm.py            # Capa multi-proveedor de IA (gemini/openrouter)
+│   ├── cache.py          # Cache SQLite de búsquedas (TTL) y análisis (clave fuentes+modelo)
+│   ├── llm.py            # Capa multi-proveedor de IA (gemini/openrouter) + fallback y circuit breaker
 │   ├── analyzer.py       # Prompts y síntesis: usa la capa llm
 │   ├── writer.py         # Genera el .md en documentos/año/mes/ + índice mensual
 │   ├── syncer.py         # Copia incremental de documentos/ al vault de Obsidian
@@ -59,7 +61,7 @@ Asistente Universitario/
 ├── docs/
 │   ├── ARQUITECTURA.md
 │   └── ejemplo-formato-investigacion.md
-├── data/                 # Estado en runtime (usage.json)
+├── data/                 # Estado en runtime (usage.json, cache.db)
 ├── documentos/           # Salida: documentos generados por fecha
 └── requirements.txt
 ```
@@ -68,8 +70,8 @@ Asistente Universitario/
 
 1. **Recepción** — `bot.py` recibe el mensaje vía polling (webhook no necesario en local).
 2. **Parseo** — `parser.py` extrae título ("temario corte 1") y lista de temas separados por comas o saltos de línea.
-3. **Investigación** — `searcher.py` busca cada tema (top N resultados, ej. 3–5 URLs + snippets).
-4. **Análisis** — `analyzer.py` envía los resultados al proveedor de IA configurado (vía `llm.py`) para sintetizar una explicación por tema.
+3. **Investigación** — `pipeline.py` lanza todos los temas **en paralelo** (`asyncio.gather` + `to_thread`); por tema consulta el cache de búsquedas (si no hay entrada vigente, busca en la web con `searcher.py`), y luego el cache de análisis; si no hay acierto sintetiza con el proveedor configurado vía `llm.py`.
+4. **Análisis** — los resultados se envían a la IA para redactar una explicación por tema. La llamada pasa por una **cadena de modelos**: primero `AI_MODEL` y, si falla, los de `AI_FALLBACK_MODELS`; un circuit breaker omite modelos caídos durante 5 min.
 5. **Escritura** — `writer.py` crea el documento:
    - Estructura jerárquica por fecha (estilo diario): `documentos/<año>/<MM-mes>/<DD_HH-MM>_<slug>.md`
      ej. `documentos/2026/08-agosto/22_21-30_temario-corte-1.md`
@@ -88,15 +90,23 @@ Asistente Universitario/
   `analyzer.py` quedan exentos del límite de línea (prosa).
 - **Mypy**: chequeo estricto sobre `asistente/` y `tests/`. Las invariantes de
   PTB (message/query presentes por filtro) se documentan con `assert`.
-- **Pytest**: 91 tests, 97% de cobertura con ramas. Módulos puros testeables
+- **Pytest**: 108 tests, 97% de cobertura con ramas. Módulos puros testeables
   directamente; searcher/llm/analyzer/bot con stubs (sin red ni claves).
-  Fixtures aíslan `documentos/`, vault, `usage.json` y el archivo de log.
+  Fixtures aíslan `documentos/`, vault, `usage.json`, el cache SQLite y el log.
 - **Pre-commit**: higiene de archivos + ruff-check --fix + ruff-format.
 
 ## Decisiones de diseño
 
 - **Polling** en vez de webhook: más simple para uso personal/local.
-- **Búsqueda secuencial por tema** con manejo de errores: si falla la búsqueda de un tema, se marca en el doc y continúa con los demás.
+- **Investigación en paralelo**: cada tema corre búsqueda+análisis en su propio
+  thread; los temas avanzan simultáneamente y `gather` preserva el orden.
+- **Cache SQLite** (`data/cache.db`): búsquedas con TTL de 7 días
+  (`CACHE_TTL_DAYS`) y análisis indexados por (tema + URLs de fuentes +
+  proveedor + modelo): si cambia cualquiera, la clave cambia y se regenera.
+  Los aciertos no consumen cuota de IA ni se registran en `/uso`.
+- **Cadena de fallback con circuit breaker** (`llm.py`): tras 3 fallos
+  consecutivos de un modelo queda "abierto" 300 s y la cadena sigue con el
+  siguiente de `AI_FALLBACK_MODELS`; un éxito reinicia el contador.
 - **Gemini con reintentos**: si se agota la cuota gratuita diaria, el documento se genera igual con los snippets crudos de búsqueda (degradación elegante).
 - **Capa multi-proveedor** (`llm.py`): `analyzer.py` no sabe qué proveedor usa; cambiar de IA es editar `.env` (decisión orientada a evitar lock-in y a portabilidad del CV).
 - **Logging dual con rotación**: consola + `logs/bot.log` (5 MB × 3 respaldos). Los errores de handlers los captura un error handler global que registra el traceback al archivo sin interrumpir el bot ni enviar mensajes al chat.
