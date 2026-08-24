@@ -39,12 +39,14 @@ class FakeMessage:
 
 
 class FakeQuery:
+    message: Any = None
+
     def __init__(self, data):
         self.data = data
         self.answers = []
         self.edits = []
 
-    async def answer(self, text=None):
+    async def answer(self, text=None, **kwargs):
         self.answers.append(text)
 
     async def edit_message_text(self, text, **kwargs):
@@ -298,7 +300,7 @@ def test_research_genera_un_documento_con_todos_los_temas(usage_file):
     assert any("Documento listo" in t for t in msg.reply_texts)
 
 
-# ---------- fotos ----------
+# ---------- fotos: conversación de selección ----------
 
 
 def mensaje_con_foto(caption="", bytes_imagen=b"img"):
@@ -314,6 +316,24 @@ def mensaje_con_foto(caption="", bytes_imagen=b"img"):
     return msg
 
 
+def ctx_foto():
+    return types.SimpleNamespace(user_data={})
+
+
+def fake_query_ft(data, texto="mensaje"):
+    query = FakeQuery(data)
+    query.message = FakeMessage(texto)
+    return query
+
+
+def test_teclado_y_texto_de_seleccion():
+    teclado = bot.teclado_temas(["a", "b"], {1})
+    etiquetas = [b.text for fila in teclado.inline_keyboard for b in fila]
+    assert etiquetas == ["a", "✅ b", "✔️ Generar", "✖️ Cancelar"]
+    assert "1 de 2" in bot.texto_seleccion("T", ["a", "b"], {1})
+    assert "ninguno todavía" in bot.texto_seleccion("T", ["a", "b"], set())
+
+
 def test_foto_con_caption_parseable_evita_vision(monkeypatch):
     llamado = []
     monkeypatch.setattr(
@@ -322,23 +342,108 @@ def test_foto_con_caption_parseable_evita_vision(monkeypatch):
         lambda *a: llamado.append(a),
     )
     msg = mensaje_con_foto(caption="corte 3: sql, joins")
-    run(bot.handle_photo(fake_update(message=msg), CTX))
+    estado = run(bot.foto_entry(fake_update(message=msg), ctx_foto()))
+    assert estado == bot.ConversationHandler.END
     assert not llamado
     assert any("Documento listo" in t for t in msg.reply_texts)
 
 
-def test_foto_sin_caption_usa_vision(monkeypatch):
-    monkeypatch.setattr(bot, "extract_topics_from_image", lambda *a: ("Pizarrón", ["tema 1"]))
+def test_foto_sin_caption_muestra_seleccion(monkeypatch):
+    monkeypatch.setattr(
+        bot, "extract_topics_from_image", lambda *a: ("Pizarrón", ["tema 1", "tema 2"])
+    )
     msg = mensaje_con_foto()
-    run(bot.handle_photo(fake_update(message=msg), CTX))
-    assert any("Pizarrón" in t for t in msg.reply_texts)
+    ctx = ctx_foto()
+    estado = run(bot.foto_entry(fake_update(message=msg), ctx))
+    assert estado == bot.SELECCION
+    assert ctx.user_data["foto"]["title"] == "Pizarrón"
+    assert any("seleccionados" in t.lower() for t in msg.reply_texts)
 
 
 def test_foto_ilegible_avisa_al_usuario(monkeypatch):
     monkeypatch.setattr(bot, "extract_topics_from_image", lambda *a: None)
     msg = mensaje_con_foto()
-    run(bot.handle_photo(fake_update(message=msg), CTX))
+    estado = run(bot.foto_entry(fake_update(message=msg), ctx_foto()))
+    assert estado == bot.ConversationHandler.END
     assert any("No pude leer" in t for t in msg.reply_texts)
+
+
+def test_toggle_marca_y_desmarca():
+    ctx = ctx_foto()
+    ctx.user_data["foto"] = {"title": "T", "topics": ["a", "b"], "sel": set()}
+
+    q = fake_query_ft("ft:0")
+    estado = run(bot.foto_toggle(fake_update(query=q), ctx))
+    assert estado == bot.SELECCION
+    assert ctx.user_data["foto"]["sel"] == {0}
+    assert "1 de 2" in q.edits[-1]
+
+    run(bot.foto_toggle(fake_update(query=q), ctx))
+    assert ctx.user_data["foto"]["sel"] == set()
+
+
+def test_generar_sin_seleccion_avisa():
+    ctx = ctx_foto()
+    ctx.user_data["foto"] = {"title": "T", "topics": ["a"], "sel": set()}
+    q = fake_query_ft("ft:go")
+
+    estado = run(bot.foto_toggle(fake_update(query=q), ctx))
+
+    assert estado == bot.SELECCION
+    assert any("al menos un tema" in a for a in q.answers if a)
+
+
+def test_generar_con_seleccion_investiga_solo_lo_elegido(monkeypatch):
+    ctx = ctx_foto()
+    ctx.user_data["foto"] = {
+        "title": "T",
+        "topics": ["a", "b", "c"],
+        "sel": {0, 2},
+    }
+    investigados = []
+
+    async def fake_investigar(destino, title, topics):
+        investigados.append((title, topics))
+
+    monkeypatch.setattr(bot, "_investigar", fake_investigar)
+    q = fake_query_ft("ft:go")
+
+    estado = run(bot.foto_toggle(fake_update(query=q), ctx))
+
+    assert estado == bot.ConversationHandler.END
+    assert investigados == [("T", ["a", "c"])]
+    assert "foto" not in ctx.user_data
+
+
+def test_cancelar_por_boton():
+    ctx = ctx_foto()
+    ctx.user_data["foto"] = {"title": "T", "topics": ["a"], "sel": {0}}
+    q = fake_query_ft("ft:no")
+
+    estado = run(bot.foto_toggle(fake_update(query=q), ctx))
+
+    assert estado == bot.ConversationHandler.END
+    assert "cancelada" in q.edits[-1]
+    assert "foto" not in ctx.user_data
+
+
+def test_cancel_command_limpia_estado():
+    ctx = ctx_foto()
+    ctx.user_data["foto"] = {"title": "T", "topics": [], "sel": set()}
+    msg = FakeMessage()
+
+    estado = run(bot.cancelar(fake_update(message=msg), ctx))
+
+    assert estado == bot.ConversationHandler.END
+    assert "Cancelado" in msg.reply_texts[0]
+    assert "foto" not in ctx.user_data
+
+
+def test_boton_con_estado_expirado_avisa():
+    q = fake_query_ft("ft:0")
+    estado = run(bot.foto_toggle(fake_update(query=q), ctx_foto()))
+    assert estado == bot.ConversationHandler.END
+    assert any("expiró" in (a or "") for a in q.answers)
 
 
 # ---------- registros ----------

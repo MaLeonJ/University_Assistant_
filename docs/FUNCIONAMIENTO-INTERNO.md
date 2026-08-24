@@ -309,10 +309,31 @@ Los snippets se resaltan con «…» y el bot escapa HTML antes de enviarlos.
 ### Exportación — `exporter.py`
 `resolver_documento(termino)`: sin términos → documento más reciente; con
 términos → primer resultado del índice full-text. `exportar(md, formato)`
-ejecuta `pandoc md -o salida` (timeout 120 s). Sin pandoc instalado lanza
-`RuntimeError` con las instrucciones de instalación; para PDF hace falta
-además un motor LaTeX (texlive-xetex). Los archivos exportados quedan junto
-al `.md` original en `documentos/`.
+ejecuta pandoc con timeout de 120 s. Para PDF usa XeLaTeX explícito y
+convierte una **copia temporal sin emojis** (LaTeX no tiene esos glifos;
+los símbolos matemáticos ≤ ≈ ∈ se conservan). Sin pandoc instalado lanza
+`RuntimeError` con las instrucciones de instalación. Los archivos exportados
+quedan junto al `.md` original en `documentos/`.
+
+### Conversación de fotos — `bot.foto_entry` / `foto_toggle`
+`ConversationHandler` con un solo estado intermedio (`SELECCION`):
+- **Entrada** (`MessageHandler PHOTO`): si el caption trae `:` va directo al
+  pipeline (atajo barato); si no, visión extrae título+temas y muestra un
+  teclado multi-selección (un botón por tema, máx `MAX_TEMAS_FOTO=12`).
+- **Toggles** (`CallbackQueryHandler pattern ^ft:`): `ft:N` alterna el tema
+  (re-dibuja el teclado con ✅), `ft:go` genera solo lo marcado (exige ≥1) y
+  `ft:no` cancela. Las selecciones viven en `context.user_data["foto"]`.
+- En estado de selección, una foto nueva reinicia la selección (la entrada
+  también está registrada dentro del estado).
+- **Fallback**: `/cancel` limpia el estado en cualquier momento. Estado
+  inexistente (bot reiniciado) → aviso de expiración.
+
+### CLI — `cli.py` (typer)
+Comando global `asistente` (entry point en pyproject: `asistente.cli:app`):
+`investigar`, `buscar [-l N]`, `exportar FORMATO [TERMINO]`, `uso`, `stats`.
+Reutiliza parser/pipeline/writer/indexer/exporter sin duplicar nada; `uso`
+imprime el formato de Telegram desmarcado (`_plano`). Tests con
+`typer.testing.CliRunner`.
 
 `docs_text()`: `writer.list_months()` recorre años/meses descendente saltando
 meses vacíos; muestra máx `MAX_DOCS_MOSTRADOS=12` con tamaño KB y nota
@@ -418,7 +439,7 @@ Fixtures (`tests/conftest.py`):
 - En test_bot, autouse además neutraliza `AUTHORIZED_USER_ID=0` (el `.env`
   real no debe filtrarse en las pruebas).
 
-Estado: **134 tests, 97% cobertura con ramas**, ruff (lint+format) y mypy
+Estado: **154 tests, 97% cobertura con ramas**, ruff (lint+format) y mypy
 estrictos en `asistente/` y `tests/`, hooks pre-commit (higiene + ruff).
 La suite cazó dos bugs reales: dedup de fuentes solo entre temas (no
 intra-tema) y la carrera de escritura de `usage.json` al paralelizar.
@@ -453,10 +474,10 @@ pre-commit run --all-files
 
 ## 14. Límites actuales (roadmap activo)
 
-Fases 1-3 completadas. Fase 4 en curso: ✅ `/buscar` FTS5, ✅ export
-PDF/DOCX (requiere pandoc), ✅ `/stats`. Pendiente: ConversationHandler
-interactivo (foto → elegir temas con botones), multi-usuario con quotas,
-modo CLI con typer. Fase 5: systemd/Docker, README final, CI.
+Fases 1-3 completadas. Fase 4 completa: ✅ `/buscar` FTS5, ✅ export
+PDF/DOCX, ✅ `/stats`, ✅ conversación foto→botones, ✅ CLI typer.
+Multi-usuario descartado por decisión de Leon (herramienta personal).
+Fase 5: systemd/Docker, README final con GIF + badges CI, changelog.
 
 ## 15. Orden sugerido de lectura del código
 

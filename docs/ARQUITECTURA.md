@@ -43,10 +43,11 @@ Bot de Telegram que recibe mensajes del usuario (ej. "temario corte 1: qué es b
 
 ```
 Asistente Universitario/
-├── main.py               # Punto de entrada: python main.py
+├── main.py               # Punto de entrada del bot: python main.py
 ├── asistente/            # Paquete principal
 │   ├── __init__.py
-│   ├── bot.py            # Handlers de Telegram y menú
+│   ├── bot.py            # Handlers de Telegram, menú y conversación de fotos
+│   ├── cli.py            # CLI `asistente` (typer): mismo pipeline, sin Telegram
 │   ├── parser.py         # Detecta intención: ¿es un temario/lista de temas?
 │   ├── pipeline.py       # Orquestador async: busca+analiza todos los temas en paralelo, con cache
 │   ├── searcher.py       # Búsqueda web de cada tema (aislado, reemplazable)
@@ -92,7 +93,7 @@ Asistente Universitario/
   `analyzer.py` quedan exentos del límite de línea (prosa).
 - **Mypy**: chequeo estricto sobre `asistente/` y `tests/`. Las invariantes de
   PTB (message/query presentes por filtro) se documentan con `assert`.
-- **Pytest**: 134 tests, 97% de cobertura con ramas. Módulos puros testeables
+- **Pytest**: 154 tests, 97% de cobertura con ramas. Módulos puros testeables
   directamente; searcher/llm/analyzer/bot con stubs (sin red ni claves).
   Fixtures aíslan `documentos/`, vault, `usage.json`, el cache SQLite y el log.
 - **Pre-commit**: higiene de archivos + ruff-check --fix + ruff-format.

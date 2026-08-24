@@ -1,6 +1,6 @@
 [project]
 name = "asistente-universitario"
-version = "0.2.0"
+version = "0.3.0"
 description = "Bot de Telegram que investiga temarios en la web y genera documentos Markdown sincronizados a Obsidian."
 requires-python = ">=3.12"
 dependencies = [
@@ -9,6 +9,7 @@ dependencies = [
     "google-genai==2.19.0",
     "openai==3.3.1",
     "python-dotenv==1.2.3",
+    "typer==0.27.1",
 ]
 
 [project.optional-dependencies]
@@ -19,6 +20,9 @@ dev = [
     "mypy==2.3.1",
     "pre-commit==4.6.2",
 ]
+
+[project.scripts]
+asistente = "asistente.cli:app"
 
 [build-system]
 requires = ["setuptools>=75"]

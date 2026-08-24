@@ -9,6 +9,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    ConversationHandler,
     MessageHandler,
     filters,
 )
@@ -36,7 +37,10 @@ logger = logging.getLogger(__name__)
 MAX_DOCS_MOSTRADOS = 12
 MAX_LOG_BLOCKS = 10
 MAX_LOG_CHARS = 3500
+MAX_TEMAS_FOTO = 12
 LOG_LINE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+ ")
+
+SELECCION = 0
 
 HELP_TEXT = (
     "🤖 *Asistente Universitario*\n\n"
@@ -56,7 +60,8 @@ HELP_TEXT = (
     "/stats — resumen de biblioteca y consumo\n"
     "/logs — ver los últimos errores registrados\n\n"
     "📷 También puedes enviar una *foto* del pizarrón o apuntes: la leeré, "
-    "detectaré los temas y generaré el documento igual."
+    "detectaré los temas y *elegirás con botones* cuáles investigar. "
+    "Puedes abortar en cualquier momento con /cancel."
 )
 
 MENU_KEYBOARD = InlineKeyboardMarkup(
@@ -306,13 +311,13 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await query.edit_message_text(HELP_TEXT, parse_mode="Markdown")
 
 
-async def research(update: Update, title: str, topics: list[str]) -> None:
-    assert update.message is not None
-    await update.message.reply_text(
+async def _investigar(destino, title: str, topics: list[str]) -> None:
+    """Ejecuta la investigación y responde sobre `destino` (mensaje de Telegram)."""
+    await destino.reply_text(
         f"🔎 Investigando *{len(topics)} tema(s)* de «{title}»...\n_Esto puede tardar un poco._",
         parse_mode="Markdown",
     )
-    await update.message.chat.send_action("typing")
+    await destino.chat.send_action("typing")
 
     sections, results_by_topic = await research_topics(topics, SEARCH_MAX_RESULTS)
     logger.info("Investigación completa: %s", title)
@@ -320,11 +325,16 @@ async def research(update: Update, title: str, topics: list[str]) -> None:
     path = write_document(title, topics, sections, results_by_topic)
 
     used, limit = get_usage()
-    await update.message.reply_text(
+    await destino.reply_text(
         f"✅ Documento listo:\n`{path.name}`\n\n📊 Llamadas a la IA hoy: {used}/{limit}",
         parse_mode="Markdown",
     )
-    await show_menu(update.message)
+    await show_menu(destino)
+
+
+async def research(update: Update, title: str, topics: list[str]) -> None:
+    assert update.message is not None
+    await _investigar(update.message, title, topics)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -340,16 +350,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await research(update, title, topics)
 
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+def teclado_temas(topics: list[str], sel: set[int]) -> InlineKeyboardMarkup:
+    """Teclado multi-selección: un botón por tema + Generar/Cancelar."""
+    filas = [
+        [InlineKeyboardButton(("✅ " if i in sel else "") + t, callback_data=f"ft:{i}")]
+        for i, t in enumerate(topics)
+    ]
+    filas.append(
+        [
+            InlineKeyboardButton("✔️ Generar", callback_data="ft:go"),
+            InlineKeyboardButton("✖️ Cancelar", callback_data="ft:no"),
+        ]
+    )
+    return InlineKeyboardMarkup(filas)
+
+
+def texto_seleccion(title: str, topics: list[str], sel: set[int]) -> str:
+    n = len(sel)
+    total = len(topics)
+    resumen = f"{n} de {total}" if n else "ninguno todavía"
+    return (
+        f"📋 Leí la imagen: «{title}»\n\n"
+        f"Temas seleccionados: *{resumen}*.\n"
+        f"Toca los temas que quieras incluir y luego pulsa *Generar*."
+    )
+
+
+async def foto_entry(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not authorized(update) or update.message is None:
-        return
+        return ConversationHandler.END
 
     caption = (update.message.caption or "").strip()
     if ":" in caption:
         parsed = parse_message(caption)
         if parsed:
-            await research(update, *parsed)
-            return
+            await _investigar(update.message, *parsed)
+            return ConversationHandler.END
 
     await update.message.reply_text("📷 Analizando la imagen...")
     await update.message.chat.send_action("typing")
@@ -364,13 +400,67 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "❌ No pude leer la imagen. Verifica tu API key o intenta con "
             "una foto más clara del pizarrón/apuntes."
         )
-        return
+        return ConversationHandler.END
 
-    title, topics = parsed
+    title, topics = parsed[:2]
+    topics = topics[:MAX_TEMAS_FOTO]
+    sel: set[int] = set()
+    user_data = context.user_data
+    assert user_data is not None
+    user_data["foto"] = {"title": title, "topics": topics, "sel": sel}
     await update.message.reply_text(
-        f"📋 Leí la imagen: «{title}»\nTemas detectados: {', '.join(topics)}"
+        texto_seleccion(title, topics, sel), reply_markup=teclado_temas(topics, sel)
     )
-    await research(update, title, topics)
+    return SELECCION
+
+
+async def foto_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    assert query is not None and query.data is not None
+    user_data = context.user_data
+    assert user_data is not None
+    datos = user_data.get("foto")
+    accion = query.data
+
+    if accion == "ft:no":
+        user_data.pop("foto", None)
+        await query.answer()
+        await query.edit_message_text("✖️ Selección cancelada.")
+        return ConversationHandler.END
+
+    if datos is None:
+        await query.answer("Esta selección expiró; envía la foto otra vez.", show_alert=True)
+        return ConversationHandler.END
+
+    if accion == "ft:go":
+        if not datos["sel"]:
+            await query.answer("Marca al menos un tema primero.", show_alert=True)
+            return SELECCION
+        title = datos["title"]
+        temas = [datos["topics"][i] for i in sorted(datos["sel"])]
+        user_data.pop("foto", None)
+        await query.answer()
+        assert query.message is not None
+        await _investigar(query.message, title, temas)
+        return ConversationHandler.END
+
+    idx = int(accion.split(":")[1])
+    datos["sel"] ^= {idx}
+    await query.answer()
+    await query.edit_message_text(
+        texto_seleccion(datos["title"], datos["topics"], datos["sel"]),
+        reply_markup=teclado_temas(datos["topics"], datos["sel"]),
+    )
+    return SELECCION
+
+
+async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_data = context.user_data
+    assert user_data is not None
+    user_data.pop("foto", None)
+    if update.message is not None:
+        await update.message.reply_text("✖️ Cancelado.")
+    return ConversationHandler.END
 
 
 def main() -> None:
@@ -392,7 +482,19 @@ def main() -> None:
     app.add_handler(CommandHandler("logs", logs_command))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(
+        ConversationHandler(
+            entry_points=[MessageHandler(filters.PHOTO & ~filters.COMMAND, foto_entry)],
+            states={
+                SELECCION: [
+                    CallbackQueryHandler(foto_toggle, pattern=r"^ft:"),
+                    MessageHandler(filters.PHOTO & ~filters.COMMAND, foto_entry),
+                ]
+            },
+            fallbacks=[CommandHandler("cancel", cancelar)],
+            allow_reentry=True,
+        )
+    )
     app.add_error_handler(on_error)
 
     logger.info("Bot iniciado")

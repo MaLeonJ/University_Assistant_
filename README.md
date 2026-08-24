@@ -24,7 +24,7 @@ cp .env.example .env
 
 | Herramienta | Comando | Estado |
 |---|---|---|
-| Tests | `pytest` | 134 tests, 97% de cobertura |
+| Tests | `pytest` | 154 tests, 97% de cobertura |
 | Lint + formato | `ruff check . && ruff format .` | limpio |
 | Tipado | `mypy asistente/ tests/` | estricto |
 | Hooks | `pre-commit install` | ruff + higiene de archivos |
@@ -55,8 +55,25 @@ consola de cada proveedor.
 ## Uso
 
 ```bash
-python main.py
+python main.py     # bot de Telegram
+asistente --help   # misma potencia desde la terminal (CLI)
 ```
+
+### CLI
+
+```bash
+pip install -e .   # registra el comando `asistente`
+
+asistente investigar "corte 1: bases de datos, modelo E-R"
+asistente buscar entimema silogismo -l 5
+asistente exportar pdf          # el más reciente
+asistente exportar docx logica  # el mejor match
+asistente uso
+asistente stats
+```
+
+La CLI reutiliza exactamente los mismos módulos que el bot: lo que generes
+por un lado aparece en el otro.
 
 - `/docs` — lista documentos por mes
 - `/buscar <términos>` — búsqueda full-text en tu biblioteca (insensible a
@@ -82,12 +99,13 @@ docs/                ARQUITECTURA.md y ejemplos
 
 ## Features
 
-- Texto y fotos del pizarrón (visión multimodal, sin OCR externo)
+- Texto y fotos del pizarrón: la IA lee los temas y **eliges con botones** cuáles investigar
 - Investigación de todos los temas en paralelo
 - Cache SQLite: temas repetidos no gastan cuota de IA
 - Fallback de modelos con circuit breaker si el proveedor falla
 - Búsqueda full-text propia sobre la biblioteca (FTS5)
 - Exportación PDF/DOCX con pandoc
+- CLI completa (`asistente`) sobre el mismo pipeline que el bot
 - Índice mensual auto-regenerado estilo Obsidian (dataview + wikilinks)
 - Contador diario de llamadas IA (`/uso`) e historial (`/stats`)
 - Sincronización incremental al vault (`/sync`)
