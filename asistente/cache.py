@@ -94,3 +94,14 @@ def put_analysis(key: str, text: str, db_path=None) -> None:
             )
     except sqlite3.Error as e:
         logger.warning("No se pudo guardar el análisis en cache: %s", e)
+
+
+def stats(db_path=None) -> tuple[int, int]:
+    """(búsquedas cacheadas, análisis reutilizables); (0, 0) si no hay BD."""
+    try:
+        with _connect(db_path) as conn:
+            busquedas = conn.execute("SELECT count(*) FROM searches").fetchone()[0]
+            analisis = conn.execute("SELECT count(*) FROM analyses").fetchone()[0]
+    except sqlite3.Error:
+        return 0, 0
+    return busquedas, analisis

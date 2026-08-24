@@ -113,6 +113,8 @@ main.py ──────────────▶ bot.py (orquestador Telegr
                                │
                                ▼
                             usage.py (registra consumo)
+  indexer.py ◀── documentos/ (FTS5; lo consultan /buscar y exporter)
+  exporter.py ◀── pandoc (binario externo opcional)
   logsetup.py ◀── bot.py (al importar configura logging global)
   config.py ◀── TODOS (única fuente de verdad de rutas/tokens/env)
 ```
@@ -288,9 +290,29 @@ string; cada rama llama a la misma función pura que el comando equivalente
 | `/start`, `/help` | `start` | `HELP_TEXT` + menú |
 | `/menu` | `menu` → `show_menu` | teclado |
 | `/docs` | `docs_command` | `docs_text()` sobre disco real |
+| `/buscar` | `buscar_command` | `indexer.sync_index()` + `indexer.search()` (FTS5) |
+| `/exportar` | `exportar_command` | `exporter.resolver_documento()` + pandoc |
+| `/stats` | `stats_command` | writer + usage + cache.stats() |
 | `/sync` | `sync_command` | `sync_documents()` |
 | `/uso` | `uso_command` | `format_usage()` |
 | `/logs` | `logs_command` | `logs_text()` sobre `bot.log` |
+
+### Búsqueda full-text — `indexer.py`
+Índice SQLite FTS5 (`data/search.db`, tokenizador `unicode61
+remove_diacritics 2`). `sync_index()` compara sha256 por archivo: alta,
+actualización o baja incremental; ignora los índices mensuales. `search()`
+convierte la consulta en términos citados con prefijo (`"derivada"*`): sin
+acentos da igual y «derivada» encuentra «derivadas»; palabras reservadas de
+FTS5 (OR/AND/NOT) van dentro de la cita, así que nunca rompen el parser.
+Los snippets se resaltan con «…» y el bot escapa HTML antes de enviarlos.
+
+### Exportación — `exporter.py`
+`resolver_documento(termino)`: sin términos → documento más reciente; con
+términos → primer resultado del índice full-text. `exportar(md, formato)`
+ejecuta `pandoc md -o salida` (timeout 120 s). Sin pandoc instalado lanza
+`RuntimeError` con las instrucciones de instalación; para PDF hace falta
+además un motor LaTeX (texlive-xetex). Los archivos exportados quedan junto
+al `.md` original en `documentos/`.
 
 `docs_text()`: `writer.list_months()` recorre años/meses descendente saltando
 meses vacíos; muestra máx `MAX_DOCS_MOSTRADOS=12` con tamaño KB y nota
@@ -378,6 +400,8 @@ Principio: **lógica pura directo; bordes con stubs**.
 | parser, writer, syncer, usage | funciones puras sobre carpetas temporales (`tmp_path`) — nada de mocks |
 | searcher | clase `FakeDDGS` con lista de efectos (excepción o datos); `time.sleep` parcheado |
 | cache | SQLite en `tmp_path` (fixture autouse `cache_db_tmp`); roundtrips, TTL, claves, BD corrupta |
+| indexer | biblioteca temporal; sync incremental (altas/actualizaciones/bajas), búsqueda con acentos/plurales, consultas maliciosas, límites |
+| exporter | `subprocess.run` y `pandoc_disponible` parcheados; éxito/falla/timeout, resolución por recencia y por índice |
 | pipeline | `search_topic`/`analyze_topic` fakes; orden, paralelismo medido por reloj, propagación de `max_results`, acierto de cache y no-cacheo de fallbacks |
 | llm | stubs del SDK: `StubCompletions`/`ScriptedCompletions` con efectos ordenados; breaker probado con umbral/cooldown/parcheo de `time.monotonic`; `google.genai.Client` reemplazado por stub que captura model/contents/config |
 | analyzer | `generate` y `register_call` monkeyparcheados; se prueban éxito, vacío, excepción y JSON de visión |
@@ -394,7 +418,7 @@ Fixtures (`tests/conftest.py`):
 - En test_bot, autouse además neutraliza `AUTHORIZED_USER_ID=0` (el `.env`
   real no debe filtrarse en las pruebas).
 
-Estado: **108 tests, 97% cobertura con ramas**, ruff (lint+format) y mypy
+Estado: **134 tests, 97% cobertura con ramas**, ruff (lint+format) y mypy
 estrictos en `asistente/` y `tests/`, hooks pre-commit (higiene + ruff).
 La suite cazó dos bugs reales: dedup de fuentes solo entre temas (no
 intra-tema) y la carrera de escritura de `usage.json` al paralelizar.
@@ -429,9 +453,10 @@ pre-commit run --all-files
 
 ## 14. Límites actuales (roadmap activo)
 
-Fase 3 completada: paralelismo por tema, cache SQLite, dataclass
-`SearchResult`, cadena de fallback con circuit breaker.
-Fase 4-5: full-text search (`/buscar`), export PDF, systemd/Docker.
+Fases 1-3 completadas. Fase 4 en curso: ✅ `/buscar` FTS5, ✅ export
+PDF/DOCX (requiere pandoc), ✅ `/stats`. Pendiente: ConversationHandler
+interactivo (foto → elegir temas con botones), multi-usuario con quotas,
+modo CLI con typer. Fase 5: systemd/Docker, README final, CI.
 
 ## 15. Orden sugerido de lectura del código
 

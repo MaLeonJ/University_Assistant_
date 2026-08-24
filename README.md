@@ -24,7 +24,7 @@ cp .env.example .env
 
 | Herramienta | Comando | Estado |
 |---|---|---|
-| Tests | `pytest` | 108 tests, 97% de cobertura |
+| Tests | `pytest` | 134 tests, 97% de cobertura |
 | Lint + formato | `ruff check . && ruff format .` | limpio |
 | Tipado | `mypy asistente/ tests/` | estricto |
 | Hooks | `pre-commit install` | ruff + higiene de archivos |
@@ -59,6 +59,11 @@ python main.py
 ```
 
 - `/docs` — lista documentos por mes
+- `/buscar <términos>` — búsqueda full-text en tu biblioteca (insensible a
+  acentos y plurales), ej.: `/buscar ecuaciones diferenciales`
+- `/exportar pdf|docx [términos]` — convierte un documento con pandoc y te lo
+  envía (el más reciente, o el mejor match de los términos)
+- `/stats` — resumen de biblioteca, consumo de IA y cache
 - `/sync` — copia incremental de `documentos/` hacia tu vault de Obsidian
   (también con el botón 🔄 Sincronizar del menú)
 - `/uso` — cuota diaria de llamadas IA con barra de progreso
@@ -81,6 +86,8 @@ docs/                ARQUITECTURA.md y ejemplos
 - Investigación de todos los temas en paralelo
 - Cache SQLite: temas repetidos no gastan cuota de IA
 - Fallback de modelos con circuit breaker si el proveedor falla
+- Búsqueda full-text propia sobre la biblioteca (FTS5)
+- Exportación PDF/DOCX con pandoc
 - Índice mensual auto-regenerado estilo Obsidian (dataview + wikilinks)
-- Contador diario de llamadas IA (`/uso`)
+- Contador diario de llamadas IA (`/uso`) e historial (`/stats`)
 - Sincronización incremental al vault (`/sync`)

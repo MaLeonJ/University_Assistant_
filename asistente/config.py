@@ -10,6 +10,7 @@ DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
 USAGE_FILE = DATA_DIR / "usage.json"
 CACHE_DB = DATA_DIR / "cache.db"
 CACHE_TTL_DAYS = int(os.getenv("CACHE_TTL_DAYS", "7"))
+INDEX_DB = DATA_DIR / "search.db"
 
 LOG_DIR = Path(os.getenv("LOG_DIR", BASE_DIR / "logs"))
 LOG_FILE = LOG_DIR / "bot.log"

@@ -1,12 +1,17 @@
 import asyncio
 import logging
 import types
+from pathlib import Path
 from typing import Any
 
 import pytest
 
 import asistente.bot as bot
 from asistente.searcher import SearchResult
+
+
+def ctx_args(args):
+    return types.SimpleNamespace(args=args)
 
 
 class FakeChat:
@@ -24,9 +29,13 @@ class FakeMessage:
         self.chat = FakeChat()
         self.reply_texts = []
         self.photo = []
+        self.documents = []
 
     async def reply_text(self, text, **kwargs):
         self.reply_texts.append(text)
+
+    async def reply_document(self, document=None, filename=None, **kwargs):
+        self.documents.append((document, filename))
 
 
 class FakeQuery:
@@ -119,6 +128,101 @@ def test_sync_command_reporta(biblioteca_tmp):
     assert any("Sincronización" in t or "No hay documentos" in t for t in msg.reply_texts)
 
 
+# ---------- /buscar ----------
+
+
+def test_buscar_sin_args_muestra_uso():
+    msg = FakeMessage()
+    run(bot.buscar_command(fake_update(message=msg), ctx_args([])))
+    assert "Buscar" in msg.reply_texts[0]
+
+
+def test_buscar_encuentra_en_la_biblioteca(biblioteca_tmp, output_dirs, tmp_path, monkeypatch):
+    import asistente.indexer as indexer
+
+    monkeypatch.setattr(indexer, "INDEX_DB", str(tmp_path / "s.db"))
+    monkeypatch.setattr(indexer, "OUTPUT_DIR", output_dirs["out"])
+    msg = FakeMessage()
+    run(bot.buscar_command(fake_update(message=msg), ctx_args(["hola"])))
+    assert "1 resultado(s)" in msg.reply_texts[0]
+    assert "<b>x</b>" in msg.reply_texts[0]
+
+
+def test_buscar_sin_resultados_avisa(biblioteca_tmp, output_dirs, tmp_path, monkeypatch):
+    import asistente.indexer as indexer
+
+    monkeypatch.setattr(indexer, "INDEX_DB", str(tmp_path / "s.db"))
+    monkeypatch.setattr(indexer, "OUTPUT_DIR", output_dirs["out"])
+    msg = FakeMessage()
+    run(bot.buscar_command(fake_update(message=msg), ctx_args(["zzz-inexistente"])))
+    assert "Sin resultados" in msg.reply_texts[0]
+
+
+# ---------- /exportar ----------
+
+
+def test_exportar_formato_invalido_muestra_uso():
+    msg = FakeMessage()
+    run(bot.exportar_command(fake_update(message=msg), ctx_args(["xlsx"])))
+    assert "Exportar" in msg.reply_texts[0]
+
+
+def test_exportar_sin_pandoc_avisa_como_instalar(biblioteca_tmp, output_dirs, monkeypatch):
+    import asistente.exporter as exporter
+
+    monkeypatch.setattr(exporter, "pandoc_disponible", lambda: False)
+    msg = FakeMessage()
+    run(bot.exportar_command(fake_update(message=msg), ctx_args(["docx"])))
+    assert "pandoc" in msg.reply_texts[0]
+
+
+def test_exportar_envia_el_archivo(biblioteca_tmp, output_dirs, monkeypatch):
+    import asistente.exporter as exporter
+
+    llamados = {}
+
+    def fake_run(cmd, **kwargs):
+        llamados["cmd"] = cmd
+        salida = Path(cmd[3])
+        salida.write_bytes(b"%PDF-falso")
+        return types.SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(exporter, "pandoc_disponible", lambda: True)
+    monkeypatch.setattr(exporter.subprocess, "run", fake_run)
+    msg = FakeMessage()
+    run(bot.exportar_command(fake_update(message=msg), ctx_args(["pdf"])))
+
+    assert llamados["cmd"][0] == "pandoc"
+    assert msg.documents and msg.documents[0][1].endswith(".pdf")
+
+
+def test_exportar_pandoc_falla_reporta_error(biblioteca_tmp, output_dirs, monkeypatch):
+    import asistente.exporter as exporter
+
+    def fake_run(cmd, **kwargs):
+        return types.SimpleNamespace(returncode=1, stderr="linea1\nLaTeX error final")
+
+    monkeypatch.setattr(exporter, "pandoc_disponible", lambda: True)
+    monkeypatch.setattr(exporter.subprocess, "run", fake_run)
+    msg = FakeMessage()
+    run(bot.exportar_command(fake_update(message=msg), ctx_args(["pdf"])))
+    assert "LaTeX error final" in msg.reply_texts[0]
+
+
+# ---------- /stats ----------
+
+
+def test_stats_text_y_comando(output_dirs, usage_file):
+    texto = bot.stats_text()
+    assert "Biblioteca" in texto
+    assert "IA" in texto
+    assert "Cache" in texto
+
+    msg = FakeMessage()
+    run(bot.stats_command(fake_update(message=msg), CTX))
+    assert msg.reply_texts == [texto]
+
+
 @pytest.fixture
 def biblioteca_tmp(output_dirs):
     origen = output_dirs["out"] / "2026" / "08-agosto"
@@ -136,6 +240,7 @@ def biblioteca_tmp(output_dirs):
         ("docs", "documento"),
         ("uso", "Uso de la IA"),
         ("logs", "errores"),
+        ("stats", "Estadísticas"),
         ("ayuda", "Asistente Universitario"),
     ],
 )
@@ -304,7 +409,7 @@ def test_main_registra_handlers_y_arranca(monkeypatch):
 
     bot.main()
 
-    assert len(registrados) == 10
+    assert len(registrados) == 13
     assert len(errores) == 1
     assert estado["polling"]
 

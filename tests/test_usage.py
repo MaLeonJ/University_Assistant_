@@ -1,7 +1,8 @@
+import json
 import threading
 from datetime import date, timedelta
 
-from asistente.usage import format_usage, get_usage, register_call
+from asistente.usage import format_usage, get_usage, historial, register_call, total
 
 
 def test_register_call_incrementa(usage_file):
@@ -37,3 +38,28 @@ def test_format_usage_muestra_barra_y_porcentaje(write_usage):
     assert "█" in texto and "░" in texto
     assert "25%" in texto
     assert "75" in texto
+
+
+def test_migra_formato_v1(write_usage, usage_file):
+    hoy = str(date.today())
+    usage_file.write_text(json.dumps({"date": hoy, "count": 7}))
+    assert get_usage() == (7, 100)
+    assert register_call() == 8
+    datos = json.loads(usage_file.read_text())
+    assert datos == {"days": {hoy: 8}}
+
+
+def test_historial_ordenado_y_recortado(usage_file):
+    hoy = date.today()
+    dias = {
+        str(hoy - timedelta(days=5)): 3,
+        str(hoy - timedelta(days=1)): 9,
+        str(hoy): 4,
+        str(hoy - timedelta(days=40)): 99,
+    }
+    usage_file.write_text(json.dumps({"days": dias}))
+
+    assert historial(2) == [(str(hoy - timedelta(days=1)), 9), (str(hoy), 4)]
+    assert total(7) == 16
+    assert total(1) == 4
+    assert total(90) == 115

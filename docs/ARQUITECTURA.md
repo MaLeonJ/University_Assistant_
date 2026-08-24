@@ -51,6 +51,8 @@ Asistente Universitario/
 │   ├── pipeline.py       # Orquestador async: busca+analiza todos los temas en paralelo, con cache
 │   ├── searcher.py       # Búsqueda web de cada tema (aislado, reemplazable)
 │   ├── cache.py          # Cache SQLite de búsquedas (TTL) y análisis (clave fuentes+modelo)
+│   ├── indexer.py        # Índice full-text FTS5 de la biblioteca (sync incremental + search)
+│   ├── exporter.py       # Exportación PDF/DOCX vía pandoc (resuelve doc por recencia o búsqueda)
 │   ├── llm.py            # Capa multi-proveedor de IA (gemini/openrouter) + fallback y circuit breaker
 │   ├── analyzer.py       # Prompts y síntesis: usa la capa llm
 │   ├── writer.py         # Genera el .md en documentos/año/mes/ + índice mensual
@@ -90,7 +92,7 @@ Asistente Universitario/
   `analyzer.py` quedan exentos del límite de línea (prosa).
 - **Mypy**: chequeo estricto sobre `asistente/` y `tests/`. Las invariantes de
   PTB (message/query presentes por filtro) se documentan con `assert`.
-- **Pytest**: 108 tests, 97% de cobertura con ramas. Módulos puros testeables
+- **Pytest**: 134 tests, 97% de cobertura con ramas. Módulos puros testeables
   directamente; searcher/llm/analyzer/bot con stubs (sin red ni claves).
   Fixtures aíslan `documentos/`, vault, `usage.json`, el cache SQLite y el log.
 - **Pre-commit**: higiene de archivos + ruff-check --fix + ruff-format.

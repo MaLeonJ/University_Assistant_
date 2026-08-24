@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 import re
 
@@ -12,6 +13,7 @@ from telegram.ext import (
     filters,
 )
 
+from . import cache, exporter, indexer
 from .analyzer import extract_topics_from_image
 from .config import (
     AUTHORIZED_USER_ID,
@@ -25,6 +27,7 @@ from .parser import parse_message
 from .pipeline import research_topics
 from .syncer import sync_documents, sync_text
 from .usage import format_usage, get_usage
+from .usage import total as uso_total
 from .writer import list_months, month_label, write_document
 
 setup_logging()
@@ -46,8 +49,11 @@ HELP_TEXT = (
     "*Comandos:*\n"
     "/menu — abrir el menú de opciones\n"
     "/docs — ver documentos generados\n"
+    "/buscar — buscar en tu biblioteca (full-text)\n"
+    "/exportar — descargar un documento como PDF o DOCX\n"
     "/sync — copiar los documentos a tu Obsidian\n"
     "/uso — cuántas llamadas a la IA te quedan hoy\n"
+    "/stats — resumen de biblioteca y consumo\n"
     "/logs — ver los últimos errores registrados\n\n"
     "📷 También puedes enviar una *foto* del pizarrón o apuntes: la leeré, "
     "detectaré los temas y generaré el documento igual."
@@ -61,9 +67,10 @@ MENU_KEYBOARD = InlineKeyboardMarkup(
         ],
         [
             InlineKeyboardButton("🔄 Sincronizar", callback_data="sync"),
-            InlineKeyboardButton("📋 Registros", callback_data="logs"),
+            InlineKeyboardButton("📈 Estadísticas", callback_data="stats"),
         ],
         [
+            InlineKeyboardButton("📋 Registros", callback_data="logs"),
             InlineKeyboardButton("❓ Ayuda", callback_data="ayuda"),
         ],
     ]
@@ -110,6 +117,100 @@ async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message is not None
     await update.message.reply_text(logs_text(), parse_mode="Markdown")
+
+
+async def buscar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
+    consulta = " ".join(context.args or []).strip()
+    if not consulta:
+        await update.message.reply_text(
+            "🔎 *Buscar en tu biblioteca*\n\n"
+            "Escribe por ejemplo: `/buscar ecuaciones diferenciales`",
+            parse_mode="Markdown",
+        )
+        return
+
+    await update.message.chat.send_action("typing")
+    await asyncio.to_thread(indexer.sync_index)
+    resultados = await asyncio.to_thread(indexer.search, consulta, 5)
+
+    if not resultados:
+        await update.message.reply_text(f"🔎 Sin resultados para «{consulta}».")
+        return
+
+    lineas = [f"🔎 <b>{len(resultados)} resultado(s)</b> para «{html.escape(consulta)}»\n"]
+    for i, r in enumerate(resultados, 1):
+        mes = f" <i>({html.escape(r['month'])})</i>" if r["month"] else ""
+        lineas.append(f"{i}. <b>{html.escape(r['title'])}</b>{mes}")
+        lineas.append(f"    {html.escape(r['snippet'])}\n")
+    await update.message.reply_text("\n".join(lineas), parse_mode="HTML")
+
+
+async def exportar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
+    args = [a.lower() for a in (context.args or [])]
+    if not args or args[0] not in exporter.FORMATOS:
+        formatos = " | ".join(exporter.FORMATOS)
+        await update.message.reply_text(
+            f"📤 *Exportar documento*\n\n"
+            f"Uso: `/exportar {formatos}` (el más reciente)\n"
+            f"o `/exportar {formatos} <términos>` (el mejor match)\n\n"
+            f"Ejemplo: `/exportar pdf logica proposicional`",
+            parse_mode="Markdown",
+        )
+        return
+
+    formato, termino = args[0], " ".join(args[1:])
+    await update.message.chat.send_action("upload_document")
+    doc = await asyncio.to_thread(exporter.resolver_documento, termino)
+    if doc is None:
+        await update.message.reply_text(
+            "📭 No encontré ningún documento para exportar."
+            + (f" Sin resultados para «{termino}»." if termino else "")
+        )
+        return
+
+    try:
+        salida = await asyncio.to_thread(exporter.exportar, doc, formato)
+    except RuntimeError as e:
+        mensaje = str(e)
+        if "no está instalado" in mensaje:
+            mensaje += (
+                "\nPara PDF también necesitarás un motor LaTeX:\n"
+                "`sudo apt install texlive-latex-recommended texlive-xetex`"
+            )
+            await update.message.reply_text(f"⚠️ {mensaje}", parse_mode="Markdown")
+        else:
+            await update.message.reply_text(f"❌ {mensaje}")
+        return
+
+    with salida.open("rb") as fh:
+        await update.message.reply_document(document=fh, filename=salida.name)
+
+
+def stats_text() -> str:
+    meses = list_months()
+    docs = sum(len(d) for _, d in meses)
+    kb = sum(p.stat().st_size for _, ds in meses for p in ds) / 1024
+    usados_hoy, limite = get_usage()
+    semana = uso_total(7)
+    busquedas_cache, analisis_cache = cache.stats()
+
+    lineas = ["📊 *Estadísticas*\n"]
+    if docs:
+        lineas.append(f"📚 *Biblioteca:* {docs} documento(s), {len(meses)} mes(es), {kb:.0f} KB")
+    else:
+        lineas.append("📚 *Biblioteca:* aún no hay documentos.")
+    lineas.append(
+        f"🧠 *IA:* hoy {usados_hoy}/{limite} · últimos 7 días {semana} (~{semana / 7:.1f}/día)"
+    )
+    lineas.append(f"💾 *Cache:* {busquedas_cache} búsqueda(s), {analisis_cache} análisis")
+    return "\n".join(lineas)
+
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
+    await update.message.reply_text(stats_text(), parse_mode="Markdown")
 
 
 def logs_text() -> str:
@@ -197,6 +298,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await query.edit_message_text(
             logs_text(), reply_markup=MENU_KEYBOARD, parse_mode="Markdown"
         )
+    elif query.data == "stats":
+        await query.edit_message_text(
+            stats_text(), reply_markup=MENU_KEYBOARD, parse_mode="Markdown"
+        )
     elif query.data == "ayuda":
         await query.edit_message_text(HELP_TEXT, parse_mode="Markdown")
 
@@ -281,6 +386,9 @@ def main() -> None:
     app.add_handler(CommandHandler("docs", docs_command))
     app.add_handler(CommandHandler("sync", sync_command))
     app.add_handler(CommandHandler("uso", uso_command))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("buscar", buscar_command))
+    app.add_handler(CommandHandler("exportar", exportar_command))
     app.add_handler(CommandHandler("logs", logs_command))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
