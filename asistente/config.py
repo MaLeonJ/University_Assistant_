@@ -29,8 +29,8 @@ AI_API_KEY = os.getenv("AI_API_KEY")
 AI_DAILY_LIMIT = int(os.getenv("AI_DAILY_LIMIT", "100"))
 
 DEFAULT_MODELS = {
-    "gemini": "gemini-3.6-flash",
-    "openrouter": "nvidia/nemotron-nano-12b-v2-vl:free",
+    "gemini": "gemini-3.5-flash",
+    "openrouter": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
 }
 AI_MODEL = os.getenv("AI_MODEL") or DEFAULT_MODELS.get(AI_PROVIDER, "")
 

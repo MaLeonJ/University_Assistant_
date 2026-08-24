@@ -84,5 +84,6 @@ def _generate_openai_compatible(
             {"role": "system", "content": system},
             {"role": "user", "content": content},
         ],
+        extra_body={"reasoning": {"enabled": False}},
     )
     return (response.choices[0].message.content or "").strip()

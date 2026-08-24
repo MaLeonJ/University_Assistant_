@@ -338,7 +338,7 @@ cwd). Variables (todas con default sensato):
 | `SEARCH_MAX_RESULTS` | 5 | fuentes por tema |
 | `OUTPUT_DIR` / `OBSIDIAN_DIR` / `DATA_DIR` / `LOG_DIR` | rutas del repo/vault | redirigibles (clave para tests) |
 
-Defaults de modelo: `gemini-3.6-flash` · `nvidia/nemotron-nano-12b-v2-vl:free`.
+Defaults de modelo: `gemini-3.5-flash` · `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`.
 Los catálogos gratuitos rotan; si un modelo muere, cambiar `AI_MODEL`.
 
 ---

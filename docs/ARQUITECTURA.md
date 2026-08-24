@@ -122,6 +122,6 @@ Asistente Universitario/
 | `AI_DAILY_LIMIT` | Límite diario de llamadas IA mostrado en `/uso` (default 100) |
 | `OUTPUT_DIR` / `OBSIDIAN_DIR` / `DATA_DIR` | Rutas opcionales sobreescribibles |
 
-Models default por proveedor: Gemini `gemini-3.6-flash`, OpenRouter
-`nvidia/nemotron-nano-12b-v2-vl:free` (visión). El catálogo gratuito de
+Models default por proveedor: Gemini `gemini-3.5-flash`, OpenRouter
+`nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` (visión). El catálogo gratuito de
 OpenRouter rota: verifica los límites vigentes en openrouter.ai/models.
