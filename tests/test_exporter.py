@@ -39,6 +39,38 @@ def test_exportar_invoca_pandoc_y_devuelve_salida(md_doc, monkeypatch):
     assert salida.exists()
 
 
+def test_pdf_usa_xelatex_y_limpia_el_temporal(md_doc, monkeypatch):
+    capturado = {}
+
+    def fake_run(cmd, **kwargs):
+        capturado["cmd"] = cmd
+        Path(cmd[cmd.index("-o") + 1]).write_bytes(b"%PDF")
+        return types.SimpleNamespace(returncode=0, stderr="")
+
+    md_doc.write_text("# Título 📚\n\ncon emoji ⚠️ y matemática ≤ ≈ ∈\n", encoding="utf-8")
+    monkeypatch.setattr(exporter, "pandoc_disponible", lambda: True)
+    monkeypatch.setattr(exporter.subprocess, "run", fake_run)
+
+    salida = exporter.exportar(md_doc, "pdf")
+
+    cmd = capturado["cmd"]
+    assert "--pdf-engine=xelatex" in cmd
+    fuente = Path(cmd[cmd.index("-o") - 1])
+    assert not fuente.exists()
+    assert salida == md_doc.with_suffix(".pdf")
+
+
+def test_sin_emojis_conserva_matematica(md_doc):
+    md_doc.write_text("# T 📚\n\n⚠️ si a ≤ b y x ≈ y entonces x ∈ A\n", encoding="utf-8")
+    temporal = exporter._sin_emojis(md_doc)
+    try:
+        texto = temporal.read_text(encoding="utf-8")
+        assert "≤" in texto and "≈" in texto and "∈" in texto
+        assert "📚" not in texto and "⚠️" not in texto
+    finally:
+        temporal.unlink(missing_ok=True)
+
+
 def test_error_de_pandoc_expone_ultima_linea(md_doc, monkeypatch):
     def fake_run(cmd, **kwargs):
         return types.SimpleNamespace(returncode=2, stderr="aviso\nerror final de LaTeX")

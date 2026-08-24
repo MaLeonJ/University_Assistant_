@@ -183,7 +183,7 @@ def test_exportar_envia_el_archivo(biblioteca_tmp, output_dirs, monkeypatch):
 
     def fake_run(cmd, **kwargs):
         llamados["cmd"] = cmd
-        salida = Path(cmd[3])
+        salida = Path(cmd[cmd.index("-o") + 1])
         salida.write_bytes(b"%PDF-falso")
         return types.SimpleNamespace(returncode=0, stderr="")
 
