@@ -8,3 +8,4 @@ logs/
 .coverage
 *.egg-info/
 COMMITES-PENDIENTES.md
+docs/CONTEXTO-PROYECTO.md
