@@ -476,7 +476,7 @@ pre-commit run --all-files
 
 Fases 1-3 completadas. Fase 4 completa: ✅ `/buscar` FTS5, ✅ export
 PDF/DOCX, ✅ `/stats`, ✅ conversación foto→botones, ✅ CLI typer.
-Multi-usuario descartado por decisión de Leon (herramienta personal).
+Multi-usuario descartado por decisión de diseño (herramienta personal).
 Fase 5: systemd/Docker, README final con GIF + badges CI, changelog.
 
 ## 15. Orden sugerido de lectura del código

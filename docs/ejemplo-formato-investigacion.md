@@ -9,15 +9,15 @@ Esta guía reúne de forma estructurada todas las soluciones tratadas sobre cóm
 El comando fundamental para copiar el contenido de una carpeta a otra en Linux/POSIX es:
 
 ```bash
-cp /home/leon/GoogleDrive/Obsidian/Notebook/Terminal/Logs/* /home/leon/Documentos/logs_prueba/
+cp ~/Documentos/logs_origen/* ~/Documentos/logs_prueba/
 ```
 
 ### Anatomía del Comando (*Anatomy of the Command*)
 
 * **`cp` (Copy Command):** Utilidad estándar en sistemas Unix/Linux para copiar archivos y directorios.
-* **Ruta de Origen (*Source Path*):** `/home/leon/GoogleDrive/Obsidian/Notebook/Terminal/Logs/`
+* **Ruta de Origen (*Source Path*):** `~/Documentos/logs_origen/`
 * **Comodín (*Wildcard* `*`):** Selecciona todos los archivos contenidos dentro del directorio especificado.
-* **Ruta de Destino (*Destination Path*):** `/home/leon/Documentos/logs_prueba/`
+* **Ruta de Destino (*Destination Path*):** `~/Documentos/logs_prueba/`
 
 ---
 
@@ -27,49 +27,49 @@ cp /home/leon/GoogleDrive/Obsidian/Notebook/Terminal/Logs/* /home/leon/Documento
 Crea la carpeta de destino automáticamente usando `mkdir -p` antes de ejecutar la copia:
 
 ```bash
-mkdir -p /home/leon/Documentos/logs_prueba/ && cp /home/leon/GoogleDrive/Obsidian/Notebook/Terminal/Logs/* /home/leon/Documentos/logs_prueba/
+mkdir -p ~/Documentos/logs_prueba/ && cp ~/Documentos/logs_origen/* ~/Documentos/logs_prueba/
 ```
 
 ### B. Copiar subcarpetas de forma recursiva (*Recursive Copy*)
 Agrega la bandera `-r` (*recursive*) para copiar también las carpetas internas y todo su contenido:
 
 ```bash
-cp -r /home/leon/GoogleDrive/Obsidian/Notebook/Terminal/Logs/* /home/leon/Documentos/logs_prueba/
+cp -r ~/Documentos/logs_origen/* ~/Documentos/logs_prueba/
 ```
 
 ### C. Omitir duplicados / No sobrescribir (*Safe Copy / No-Clobber*)
 Usa `-n` (*no-clobber*) para ignorar los archivos que ya existan en la carpeta destino:
 
 ```bash
-cp -n /home/leon/GoogleDrive/Obsidian/Notebook/Terminal/Logs/* /home/leon/Documentos/logs_prueba/
+cp -n ~/Documentos/logs_origen/* ~/Documentos/logs_prueba/
 ```
 
 ### D. Modo interactivo (*Interactive Mode*)
 Usa `-i` (*interactive*) para pedir confirmación manual (`y/n`) antes de sobrescribir cada archivo:
 
 ```bash
-cp -i /home/leon/GoogleDrive/Obsidian/Notebook/Terminal/Logs/* /home/leon/Documentos/logs_prueba/
+cp -i ~/Documentos/logs_origen/* ~/Documentos/logs_prueba/
 ```
 
 ### E. Sobrescribir solo si el origen es más reciente (*Update Mode*)
 Usa `-u` (*update*) para actualizar el archivo de destino únicamente si la versión de origen es más nueva:
 
 ```bash
-cp -u /home/leon/GoogleDrive/Obsidian/Notebook/Terminal/Logs/* /home/leon/Documentos/logs_prueba/
+cp -u ~/Documentos/logs_origen/* ~/Documentos/logs_prueba/
 ```
 
 ### F. Crear respaldos numerados (*Numbered Backups*)
 Genera una copia de respaldo con sufijo numerado (ej. `archivo.txt.~1~`) para los archivos duplicados:
 
 ```bash
-cp --backup=numbered /home/leon/GoogleDrive/Obsidian/Notebook/Terminal/Logs/* /home/leon/Documentos/logs_prueba/
+cp --backup=numbered ~/Documentos/logs_origen/* ~/Documentos/logs_prueba/
 ```
 
 ### G. Mover en lugar de copiar (*Move Files*)
 Para reemplazar `cp` y transferir los archivos eliminando los originales:
 
 ```bash
-mv /home/leon/GoogleDrive/Obsidian/Notebook/Terminal/Logs/* /home/leon/Documentos/logs_prueba/
+mv ~/Documentos/logs_origen/* ~/Documentos/logs_prueba/
 ```
 
 ---
@@ -83,8 +83,8 @@ import shutil
 from pathlib import Path
 
 # Definir rutas de origen y destino
-origen = Path("/home/leon/GoogleDrive/Obsidian/Notebook/Terminal/Logs")
-destino = Path("/home/leon/Documentos/logs_prueba")
+origen = Path("~/Documentos/logs_origen")
+destino = Path("~/Documentos/logs_prueba")
 
 # Crear la carpeta de destino si no existe
 destino.mkdir(parents=True, exist_ok=True)
