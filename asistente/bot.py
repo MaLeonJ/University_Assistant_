@@ -480,7 +480,7 @@ def main() -> None:
     app.add_handler(CommandHandler("buscar", buscar_command))
     app.add_handler(CommandHandler("exportar", exportar_command))
     app.add_handler(CommandHandler("logs", logs_command))
-    app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(CallbackQueryHandler(button, pattern=r"^(docs|uso|sync|logs|stats|ayuda)$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
         ConversationHandler(
