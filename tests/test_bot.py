@@ -124,10 +124,10 @@ def test_menu_y_comandos_responden_algo():
         assert msg.reply_texts
 
 
-def test_sync_command_reporta(biblioteca_tmp):
+def test_sync_command_muestra_submenu(biblioteca_tmp):
     msg = FakeMessage()
     run(bot.sync_command(fake_update(message=msg), CTX))
-    assert any("Sincronización" in t or "No hay documentos" in t for t in msg.reply_texts)
+    assert any("Sincronizar documentos" in t for t in msg.reply_texts)
 
 
 # ---------- /buscar ----------
@@ -252,10 +252,59 @@ def test_button_rutas_principales(data, esperado):
     assert any(esperado in e for e in query.edits)
 
 
-def test_button_sync(biblioteca_tmp):
+def test_button_sync_muestra_submenu(biblioteca_tmp):
     query = FakeQuery("sync")
     run(bot.button(fake_update(query=query), CTX))
-    assert query.answers and query.edits
+    assert any("Sincronizar documentos" in e for e in query.edits)
+
+
+def test_button_sync_local_sincroniza(biblioteca_tmp):
+    query = FakeQuery("sync:local")
+    run(bot.button(fake_update(query=query), CTX))
+    assert any("Sincronización completada" in e for e in query.edits)
+
+
+def test_button_sync_drive_sin_configurar_avisa_pasos(monkeypatch):
+    import asistente.drive as drive
+
+    monkeypatch.setattr(drive, "GDRIVE_FOLDER_ID", "")
+    query = FakeQuery("sync:drive")
+    run(bot.button(fake_update(query=query), CTX))
+    assert any("no está configurado" in e for e in query.edits)
+    assert any("GDRIVE_FOLDER_ID" in e for e in query.edits)
+
+
+def test_button_sync_drive_configurado_sube(monkeypatch):
+    import asistente.drive as drive
+
+    monkeypatch.setattr(drive, "estado", lambda: None)
+    monkeypatch.setattr(
+        drive,
+        "sync_drive",
+        lambda: {"nuevos": 1, "actualizados": 0, "total": 1},
+    )
+    query = FakeQuery("sync:drive")
+    run(bot.button(fake_update(query=query), CTX))
+    assert any("Drive completada" in e for e in query.edits)
+
+
+def test_button_sync_drive_fallo_api_no_crashea(monkeypatch):
+    import asistente.drive as drive
+
+    def explotar():
+        raise drive.DriveError("API de Drive falló subiendo a.md: quota")
+
+    monkeypatch.setattr(drive, "estado", lambda: None)
+    monkeypatch.setattr(drive, "sync_drive", explotar)
+    query = FakeQuery("sync:drive")
+    run(bot.button(fake_update(query=query), CTX))
+    assert any("Drive falló" in e for e in query.edits)
+
+
+def test_button_menu_vuelve_al_menu():
+    query = FakeQuery("menu")
+    run(bot.button(fake_update(query=query), CTX))
+    assert any("¿Qué quieres hacer?" in e for e in query.edits)
 
 
 # ---------- mensajes de texto ----------

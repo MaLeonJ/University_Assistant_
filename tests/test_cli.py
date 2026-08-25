@@ -1,4 +1,6 @@
 import json
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -152,3 +154,53 @@ def test_stats_resumen(biblioteca, monkeypatch):
 
 def test_plano_quita_marcado():
     assert cli._plano("**negrita** y `codigo`") == "negrita y codigo"
+
+
+# ---------- drive-auth ----------
+
+
+def test_drive_auth_sin_credentials_falla(monkeypatch, tmp_path):
+    import asistente.drive as drive
+
+    monkeypatch.setattr(drive, "GDRIVE_CREDENTIALS_FILE", tmp_path / "no-existe.json")
+    resultado = runner.invoke(cli.app, ["drive-auth"])
+    assert resultado.exit_code == 1
+    assert "credentials.json" in resultado.output
+
+
+def test_drive_auth_exitoso_guarda_token(monkeypatch, tmp_path):
+    import asistente.drive as drive
+
+    cred = tmp_path / "credentials.json"
+    cred.write_text("{}")
+    token = tmp_path / "data" / "token.json"
+    monkeypatch.setattr(drive, "GDRIVE_CREDENTIALS_FILE", cred)
+    monkeypatch.setattr(drive, "GDRIVE_TOKEN_FILE", token)
+
+    class FakeCreds:
+        def to_json(self):
+            return "{}"
+
+    class FakeFlow:
+        def __init__(self, *a, **k):
+            pass
+
+        @classmethod
+        def from_client_secrets_file(cls, *a, **k):
+            return cls()
+
+        def run_local_server(self, port=0, prompt=None):
+            return FakeCreds()
+
+    fake_mod = types.SimpleNamespace(InstalledAppFlow=FakeFlow)
+    monkeypatch.setitem(sys.modules, "google_auth_oauthlib.flow", fake_mod)
+    monkeypatch.setitem(
+        sys.modules,
+        "google_auth_oauthlib",
+        types.SimpleNamespace(flow=fake_mod),
+    )
+
+    resultado = runner.invoke(cli.app, ["drive-auth"])
+    assert resultado.exit_code == 0, resultado.output
+    assert "Token guardado" in resultado.output
+    assert token.read_text() == "{}"

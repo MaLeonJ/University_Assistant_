@@ -14,7 +14,7 @@ from telegram.ext import (
     filters,
 )
 
-from . import cache, exporter, indexer
+from . import cache, drive, exporter, indexer
 from .analyzer import extract_topics_from_image
 from .config import (
     AUTHORIZED_USER_ID,
@@ -55,7 +55,7 @@ HELP_TEXT = (
     "/docs — ver documentos generados\n"
     "/buscar — buscar en tu biblioteca (full-text)\n"
     "/exportar — descargar un documento como PDF o DOCX\n"
-    "/sync — copiar los documentos a tu Obsidian\n"
+    "/sync — sincronizar a Obsidian local o Google Drive\n"
     "/uso — cuántas llamadas a la IA te quedan hoy\n"
     "/stats — resumen de biblioteca y consumo\n"
     "/logs — ver los últimos errores registrados\n\n"
@@ -79,6 +79,22 @@ MENU_KEYBOARD = InlineKeyboardMarkup(
             InlineKeyboardButton("❓ Ayuda", callback_data="ayuda"),
         ],
     ]
+)
+
+SYNC_KEYBOARD = InlineKeyboardMarkup(
+    [
+        [
+            InlineKeyboardButton("💻 Local (Obsidian)", callback_data="sync:local"),
+            InlineKeyboardButton("☁️ Google Drive", callback_data="sync:drive"),
+        ],
+        [InlineKeyboardButton("↩️ Menú", callback_data="menu")],
+    ]
+)
+
+SYNC_MENU_TEXT = (
+    "🔄 *Sincronizar documentos*\n\n"
+    "💻 *Local* — copia a tu carpeta Obsidian (`OBSIDIAN_DIR`)\n"
+    "☁️ *Drive* — sube a tu carpeta de Google Drive (`GDRIVE_FOLDER_ID`)"
 )
 
 
@@ -115,8 +131,54 @@ async def uso_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     assert update.message is not None
-    await update.message.chat.send_action("typing")
-    await update.message.reply_text(sync_text(sync_documents()), parse_mode="Markdown")
+    await update.message.reply_text(
+        SYNC_MENU_TEXT, parse_mode="Markdown", reply_markup=SYNC_KEYBOARD
+    )
+
+
+async def _sync_local(query) -> None:
+    await query.answer("Sincronizando...")
+    try:
+        resultado = await asyncio.to_thread(sync_documents)
+    except OSError as e:
+        logger.error("Sync local falló: %s", e)
+        await query.edit_message_text(
+            f"❌ *No pude sincronizar en local:*\n`{e}`\n\n"
+            "Revisa `OBSIDIAN_DIR` en `.env` (¿existe y es escribible?).",
+            parse_mode="Markdown",
+            reply_markup=MENU_KEYBOARD,
+        )
+        return
+    await query.edit_message_text(
+        sync_text(resultado), reply_markup=MENU_KEYBOARD, parse_mode="Markdown"
+    )
+
+
+async def _sync_drive(query) -> None:
+    motivo = drive.estado()
+    if motivo:
+        await query.answer()
+        await query.edit_message_text(
+            drive.texto_configuracion(motivo),
+            parse_mode="Markdown",
+            reply_markup=MENU_KEYBOARD,
+        )
+        return
+
+    await query.answer("Subiendo a Drive...")
+    try:
+        resultado = await asyncio.to_thread(drive.sync_drive)
+    except drive.DriveError as e:
+        logger.error("Sync a Drive falló: %s", e)
+        await query.edit_message_text(
+            f"❌ *Drive falló:*\n`{e}`\n\nSi el token caducó, repite `asistente drive-auth`.",
+            parse_mode="Markdown",
+            reply_markup=MENU_KEYBOARD,
+        )
+        return
+    await query.edit_message_text(
+        drive.sync_text(resultado), reply_markup=MENU_KEYBOARD, parse_mode="Markdown"
+    )
 
 
 async def logs_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -295,10 +357,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             format_usage(), parse_mode="Markdown", reply_markup=MENU_KEYBOARD
         )
     elif query.data == "sync":
-        await query.answer("Sincronizando...")
+        await query.answer()
         await query.edit_message_text(
-            sync_text(sync_documents()), reply_markup=MENU_KEYBOARD, parse_mode="Markdown"
+            SYNC_MENU_TEXT, reply_markup=SYNC_KEYBOARD, parse_mode="Markdown"
         )
+    elif query.data == "sync:local":
+        await _sync_local(query)
+    elif query.data == "sync:drive":
+        await _sync_drive(query)
+    elif query.data == "menu":
+        await query.edit_message_text("¿Qué quieres hacer?", reply_markup=MENU_KEYBOARD)
     elif query.data == "logs":
         await query.edit_message_text(
             logs_text(), reply_markup=MENU_KEYBOARD, parse_mode="Markdown"
@@ -480,7 +548,11 @@ def main() -> None:
     app.add_handler(CommandHandler("buscar", buscar_command))
     app.add_handler(CommandHandler("exportar", exportar_command))
     app.add_handler(CommandHandler("logs", logs_command))
-    app.add_handler(CallbackQueryHandler(button, pattern=r"^(docs|uso|sync|logs|stats|ayuda)$"))
+    app.add_handler(
+        CallbackQueryHandler(
+            button, pattern=r"^(docs|uso|logs|stats|ayuda|menu|sync(:local|:drive)?)$"
+        )
+    )
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(
         ConversationHandler(

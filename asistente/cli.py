@@ -124,5 +124,22 @@ def stats() -> None:
     typer.echo(f"Cache: {busquedas} búsqueda(s), {analisis} análisis")
 
 
+@app.command(name="drive-auth")
+def drive_auth() -> None:
+    """Autoriza Google Drive en tu navegador y genera data/token.json."""
+    from . import drive
+
+    try:
+        ruta = drive.login_interactivo()
+    except drive.DriveError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(code=1) from e
+    typer.secho(f"✅ Token guardado en {ruta}", fg=typer.colors.GREEN)
+    typer.echo(
+        "Copia ese archivo al servidor (junto a credentials.json) "
+        "y define GDRIVE_FOLDER_ID en .env."
+    )
+
+
 if __name__ == "__main__":
     app()

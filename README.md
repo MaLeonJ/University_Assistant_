@@ -24,7 +24,7 @@ cp .env.example .env
 
 | Herramienta | Comando | Estado |
 |---|---|---|
-| Tests | `pytest` | 154 tests, 97% de cobertura |
+| Tests | `pytest` | 180 tests, 95% de cobertura |
 | Lint + formato | `ruff check . && ruff format .` | limpio |
 | Tipado | `mypy asistente/ tests/` | estricto |
 | Hooks | `pre-commit install` | ruff + higiene de archivos |
@@ -46,7 +46,13 @@ Las dependencias están fijadas (`==`) en `pyproject.toml`.
 | `AI_MODEL` | (opcional) Modelo del proveedor; cada uno tiene default |
 | `AI_FALLBACK_MODELS` | (opcional) Modelos de respaldo separados por coma; se prueban en orden si el principal falla |
 | `AUTHORIZED_USER_ID` | Tu ID: escribirle a [@userinfobot](https://t.me/userinfobot) |
-| `OBSIDIAN_DIR` | (opcional) Carpeta de tu vault donde `/sync` copia los docs. Default: `~/GoogleDrive/Obsidian/Notebook/Universidad` |
+| `OUTPUT_DIR` | (opcional) Carpeta donde se guardan los docs generados. Default: `documentos` |
+| `OBSIDIAN_DIR` | (opcional) Carpeta destino de la sync local. Default: `~/GoogleDrive/Obsidian/Notebook/Universidad` |
+| `GDRIVE_FOLDER_ID` | (opcional) ID de tu carpeta de Drive (la parte final de su URL) para el botón ☁️ Drive |
+
+Las rutas aceptan valores absolutos, relativos al proyecto o con `~`.
+Si falta la configuración de un destino, el bot lo avisa con los pasos a
+seguir en lugar de romperse.
 
 Para cambiar de proveedor de IA solo editas esas 2-3 líneas en `.env`; el
 código no cambia. Los catálogos gratuitos rotan: revisa límites vigentes en la
@@ -68,6 +74,7 @@ asistente investigar "corte 1: bases de datos, modelo E-R"
 asistente buscar entimema silogismo -l 5
 asistente exportar pdf          # el más reciente
 asistente exportar docx logica  # el mejor match
+asistente drive-auth            # autoriza Google Drive y genera data/token.json
 asistente uso
 asistente stats
 ```
@@ -75,14 +82,26 @@ asistente stats
 La CLI reutiliza exactamente los mismos módulos que el bot: lo que generes
 por un lado aparece en el otro.
 
+### Google Drive (una sola vez)
+
+```bash
+pip install -e ".[drive]"
+# 1. Google Cloud Console → habilita «Google Drive API» → credenciales OAuth
+#    «Aplicación de escritorio» → descarga como credentials.json (raíz del proyecto)
+asistente drive-auth     # 2. abre el navegador y genera data/token.json
+# 3. copia credentials.json + data/token.json al servidor
+# 4. añade GDRIVE_FOLDER_ID=<ID> al .env del servidor
+```
+
 - `/docs` — lista documentos por mes
 - `/buscar <términos>` — búsqueda full-text en tu biblioteca (insensible a
   acentos y plurales), ej.: `/buscar ecuaciones diferenciales`
 - `/exportar pdf|docx [términos]` — convierte un documento con pandoc y te lo
   envía (el más reciente, o el mejor match de los términos)
 - `/stats` — resumen de biblioteca, consumo de IA y cache
-- `/sync` — copia incremental de `documentos/` hacia tu vault de Obsidian
-  (también con el botón 🔄 Sincronizar del menú)
+- `/sync` — abre un submenu con dos destinos: 💻 **Local** (copia incremental
+  a tu vault de Obsidian) y ☁️ **Drive** (sube a tu carpeta de Google Drive
+  vía API oficial; nunca borra del destino)
 - `/uso` — cuota diaria de llamadas IA con barra de progreso
 - `/logs` — últimos errores registrados en `logs/bot.log` (botón 📋 Registros)
 
@@ -108,4 +127,5 @@ docs/                ARQUITECTURA.md y ejemplos
 - CLI completa (`asistente`) sobre el mismo pipeline que el bot
 - Índice mensual auto-regenerado estilo Obsidian (dataview + wikilinks)
 - Contador diario de llamadas IA (`/uso`) e historial (`/stats`)
-- Sincronización incremental al vault (`/sync`)
+- Sincronización incremental a Obsidian local **o Google Drive** (`/sync`)
+- Mensajes guiados si falta configuración de un destino: nunca se rompe

@@ -21,15 +21,17 @@ def sin_log_a_archivo():
 
 @pytest.fixture
 def output_dirs(tmp_path, monkeypatch):
-    """Redirige documentos/ y el vault Obsidian a carpetas temporales."""
+    """Redirige documentos/, el vault Obsidian y la carpeta Drive a temporales."""
     out = tmp_path / "documentos"
     vault = tmp_path / "vault"
+    import asistente.drive as drive
     import asistente.syncer as syncer
     import asistente.writer as writer
 
     monkeypatch.setattr(writer, "OUTPUT_DIR", out)
     monkeypatch.setattr(syncer, "OUTPUT_DIR", out)
     monkeypatch.setattr(syncer, "OBSIDIAN_DIR", vault)
+    monkeypatch.setattr(drive, "OUTPUT_DIR", out)
     return {"out": out, "vault": vault}
 
 

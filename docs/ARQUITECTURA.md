@@ -58,6 +58,7 @@ Asistente Universitario/
 │   ├── analyzer.py       # Prompts y síntesis: usa la capa llm
 │   ├── writer.py         # Genera el .md en documentos/año/mes/ + índice mensual
 │   ├── syncer.py         # Copia incremental de documentos/ al vault de Obsidian
+│   ├── drive.py          # Copia incremental de documentos/ a Google Drive (API v3, OAuth)
 │   ├── usage.py          # Contador diario de llamadas a la IA (data/usage.json)
 │   ├── logsetup.py       # Logging a consola + archivo rotativo (logs/bot.log)
 │   └── config.py         # Rutas, tokens, modelo y límites (.env)
@@ -93,8 +94,8 @@ Asistente Universitario/
   `analyzer.py` quedan exentos del límite de línea (prosa).
 - **Mypy**: chequeo estricto sobre `asistente/` y `tests/`. Las invariantes de
   PTB (message/query presentes por filtro) se documentan con `assert`.
-- **Pytest**: 154 tests, 97% de cobertura con ramas. Módulos puros testeables
-  directamente; searcher/llm/analyzer/bot con stubs (sin red ni claves).
+- **Pytest**: 180 tests, 95% de cobertura con ramas. Módulos puros testeables
+  directamente; searcher/llm/analyzer/bot/drive con stubs (sin red ni claves).
   Fixtures aíslan `documentos/`, vault, `usage.json`, el cache SQLite y el log.
 - **Pre-commit**: higiene de archivos + ruff-check --fix + ruff-format.
 
@@ -115,7 +116,16 @@ Asistente Universitario/
 - **Logging dual con rotación**: consola + `logs/bot.log` (5 MB × 3 respaldos). Los errores de handlers los captura un error handler global que registra el traceback al archivo sin interrumpir el bot ni enviar mensajes al chat.
 - **Observabilidad desde el propio bot**: `/logs` o el botón 📋 Registros muestran los últimos bloques de error extraídos del archivo (comando y traceback incluidos), para diagnóstico sin abrir la terminal.
 - **Un solo usuario autorizado** (tu chat ID): el bot ignora mensajes de otras personas.
-- **Sincronización manual e incremental** (`/sync` o botón 🔄): copia `documentos/` al vault de Obsidian (`OBSIDIAN_DIR`, default `~/GoogleDrive/Obsidian/Notebook/Universidad`). Compara tamaño + hash MD5 porque rclone/GDrive no preserva mtimes. Solo añade/actualiza; nunca borra nada del vault.
+- **Sincronización con dos destinos** (`/sync` o botón 🔄): submenu con
+  💻 **Local** (copia a `OBSIDIAN_DIR`) y ☁️ **Drive** (sube a
+  `GDRIVE_FOLDER_ID` vía API oficial v3). Ambas comparan tamaño + hash MD5
+  porque GDrive no preserva mtimes, son incrementales y **nunca borran nada del
+  destino**. La de Drive autentica con OAuth de usuario: token refrescable
+  generado una vez con `asistente drive-auth` en la PC; el scope mínimo
+  (`drive.file`) limita el acceso a lo que el bot mismo crea.
+- **Degradación elegante de destinos**: si un destino no está configurado
+  (sin `GDRIVE_FOLDER_ID`, sin token, vault inaccesible), el bot responde con
+  los pasos para configurarlo — jamás lanza excepción al chat ni se cae.
 
 ## Fase 2 (futuro): fotos del pizarrón
 
@@ -133,7 +143,10 @@ Asistente Universitario/
 | `AUTHORIZED_USER_ID` | ID de Telegram del único usuario autorizado |
 | `SEARCH_MAX_RESULTS` | Resultados web por tema (default 5) |
 | `AI_DAILY_LIMIT` | Límite diario de llamadas IA mostrado en `/uso` (default 100) |
-| `OUTPUT_DIR` / `OBSIDIAN_DIR` / `DATA_DIR` | Rutas opcionales sobreescribibles |
+| `OUTPUT_DIR` / `OBSIDIAN_DIR` / `DATA_DIR` / `LOG_DIR` | Rutas opcionales: absolutas, relativas al proyecto o con `~` |
+| `GDRIVE_FOLDER_ID` | ID de la carpeta destino en Drive (parte final de su URL) |
+| `GDRIVE_CREDENTIALS_FILE` | (opcional) Ruta de credentials.json (default raíz del proyecto) |
+| `GDRIVE_TOKEN_FILE` | (opcional) Ruta del token OAuth (default `data/token.json`) |
 
 Models default por proveedor: Gemini `gemini-3.5-flash`, OpenRouter
 `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` (visión). El catálogo gratuito de

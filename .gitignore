@@ -5,6 +5,9 @@ documentos/
 data/
 venv/
 logs/
+credentials.json
+*.credentials.json
+client_secret*.json
 .coverage
 *.egg-info/
 COMMITES-PENDIENTES.md

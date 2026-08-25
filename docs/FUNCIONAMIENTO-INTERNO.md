@@ -84,6 +84,13 @@ Para visión, el `content` del mensaje usuario es una lista:
 `load_dotenv(BASE_DIR / ".env")` con ruta explícita — funciona sin importar el
 directorio desde donde se lance `python main.py`.
 
+### google-api-python-client `==2.199.0` + google-auth-oauthlib `==1.4.1` *(extra `[drive]`)*
+Cliente oficial de la API Drive v3 (`files.list/create/update`) y flujo OAuth
+de escritorio (`InstalledAppFlow.run_local_server`) para el token refrescable.
+Extras separados: quien no use Drive no instala las 3 librerías (~40 MB).
+Los imports de Google son perezosos (dentro de funciones): sin el extra, el
+módulo importa igual y el bot solo avisa que falta configurar.
+
 ### Stdlib protagonista
 - `asyncio.to_thread` — corre funciones bloqueantes (IA, descarga de fotos) sin trabar el event loop de PTB.
 - `logging.handlers.RotatingFileHandler` — log a archivo que rota por tamaño.
@@ -282,7 +289,8 @@ y se retiró (bloqueo regional desde Venezuela).
 `logs`, `ayuda`. `button(update, ctx)` hace `query.answer()` y enruta por ese
 string; cada rama llama a la misma función pura que el comando equivalente
 (`docs_text()`, `format_usage()`, …) y edita el mensaje original
-(`edit_message_text`) manteniendo el teclado.
+(`edit_message_text`) manteniendo el teclado. `sync` abre un **submenu**
+(`SYNC_KEYBOARD`) con `sync:local`, `sync:drive` y vuelta atrás (`menu`).
 
 ### Comandos
 | Comando | Función | Fuente de datos |
@@ -293,7 +301,7 @@ string; cada rama llama a la misma función pura que el comando equivalente
 | `/buscar` | `buscar_command` | `indexer.sync_index()` + `indexer.search()` (FTS5) |
 | `/exportar` | `exportar_command` | `exporter.resolver_documento()` + pandoc |
 | `/stats` | `stats_command` | writer + usage + cache.stats() |
-| `/sync` | `sync_command` | `sync_documents()` |
+| `/sync` | `sync_command` → submenu | `sync_documents()` (local) o `drive.sync_drive()` (Drive) |
 | `/uso` | `uso_command` | `format_usage()` |
 | `/logs` | `logs_command` | `logs_text()` sobre `bot.log` |
 
@@ -330,10 +338,10 @@ quedan junto al `.md` original en `documentos/`.
 
 ### CLI — `cli.py` (typer)
 Comando global `asistente` (entry point en pyproject: `asistente.cli:app`):
-`investigar`, `buscar [-l N]`, `exportar FORMATO [TERMINO]`, `uso`, `stats`.
-Reutiliza parser/pipeline/writer/indexer/exporter sin duplicar nada; `uso`
-imprime el formato de Telegram desmarcado (`_plano`). Tests con
-`typer.testing.CliRunner`.
+`investigar`, `buscar [-l N]`, `exportar FORMATO [TERMINO]`, `drive-auth`,
+`uso`, `stats`. Reutiliza parser/pipeline/writer/indexer/exporter/drive sin
+duplicar nada; `uso` imprime el formato de Telegram desmarcado (`_plano`).
+Tests con `typer.testing.CliRunner`.
 
 `docs_text()`: `writer.list_months()` recorre años/meses descendente saltando
 meses vacíos; muestra máx `MAX_DOCS_MOSTRADOS=12` con tamaño KB y nota
@@ -372,6 +380,30 @@ comando afectado no respondió.
 
 `sync_text(resultado)` formatea el reporte con destino incluido.
 
+### 9.1 Sincronización a Google Drive — `drive.py`
+
+Segundo destino del submenu de `/sync`. Usa la **API oficial v3**
+(`google-api-python-client`) con **OAuth de usuario**:
+
+- Setup único: credenciales OAuth «aplicación de escritorio» en
+  `credentials.json` (raíz) → `asistente drive-auth` abre el navegador y guarda
+  el token refrescable en `data/token.json` → copiar ambos al servidor y
+  definir `GDRIVE_FOLDER_ID`.
+- Scope mínimo `drive.file`: el bot solo ve lo que él mismo crea/comparte.
+- `estado()` devuelve el motivo exacto por el que no está listo; el bot lo
+  convierte en una guía paso a paso — sin configurar **no hay crash**.
+- `sync_drive()`: indexa recursivamente la carpeta destino
+  (`files.list` paginado, `trashed=false`) construyendo mapa
+  `ruta_relativa → id` para carpetas y archivos `.md`; sube solo los que
+  faltan o cuyo MD5 difiere (`files.create/update` con `MediaFileUpload`);
+  crea las subcarpetas del espejo (`año/MM-mes`) que hagan falta. **Nunca
+  borra** nada del destino.
+- Los fallos de API se envuelven en `DriveError` (incluida la creación de
+  carpetas); el handler del bot la captura y responde con el error y la cura
+  sugerida (re-autorizar si el token caducó).
+- En tests, `_servicio()` y las rutas se monkeypatchean con un fake que
+  modela carpetas/archivos y calcula MD5 real: cero red.
+
 ---
 
 ## 10. Persistencia y estado
@@ -404,7 +436,10 @@ cwd). Variables (todas con default sensato):
 | `CACHE_TTL_DAYS` | 7 | vigencia del cache de búsquedas |
 | `AI_DAILY_LIMIT` | 100 | solo cosmético (/uso) |
 | `SEARCH_MAX_RESULTS` | 5 | fuentes por tema |
-| `OUTPUT_DIR` / `OBSIDIAN_DIR` / `DATA_DIR` / `LOG_DIR` | rutas del repo/vault | redirigibles (clave para tests) |
+| `OUTPUT_DIR` / `OBSIDIAN_DIR` / `DATA_DIR` / `LOG_DIR` | rutas del repo/vault | redirigibles (clave para tests); absolutas, relativas al proyecto (`resolver_ruta`) o con `~` |
+| `GDRIVE_FOLDER_ID` | vacío | habilita el destino ☁️ Drive |
+| `GDRIVE_CREDENTIALS_FILE` | `credentials.json` | credenciales OAuth de escritorio |
+| `GDRIVE_TOKEN_FILE` | `data/token.json` | token OAuth refrescable (gitignored) |
 
 Defaults de modelo: `gemini-3.5-flash` · `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free`.
 Los catálogos gratuitos rotan; con `AI_FALLBACK_MODELS` la cadena salta sola a

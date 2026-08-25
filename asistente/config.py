@@ -6,22 +6,34 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
+
+def resolver_ruta(nombre_env: str, default: Path) -> Path:
+    """Resuelve una ruta del .env: absoluta tal cual, relativa contra BASE_DIR."""
+    valor = os.getenv(nombre_env)
+    if not valor:
+        return default
+    ruta = Path(valor).expanduser()
+    return ruta if ruta.is_absolute() else (BASE_DIR / ruta).resolve()
+
+
+DATA_DIR = resolver_ruta("DATA_DIR", BASE_DIR / "data")
 USAGE_FILE = DATA_DIR / "usage.json"
 CACHE_DB = DATA_DIR / "cache.db"
 CACHE_TTL_DAYS = int(os.getenv("CACHE_TTL_DAYS", "7"))
 INDEX_DB = DATA_DIR / "search.db"
 
-LOG_DIR = Path(os.getenv("LOG_DIR", BASE_DIR / "logs"))
+LOG_DIR = resolver_ruta("LOG_DIR", BASE_DIR / "logs")
 LOG_FILE = LOG_DIR / "bot.log"
 
-OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", BASE_DIR / "documentos"))
-OBSIDIAN_DIR = Path(
-    os.getenv(
-        "OBSIDIAN_DIR",
-        Path.home() / "GoogleDrive/Obsidian/Notebook/Universidad",
-    )
+OUTPUT_DIR = resolver_ruta("OUTPUT_DIR", BASE_DIR / "documentos")
+OBSIDIAN_DIR = resolver_ruta(
+    "OBSIDIAN_DIR",
+    Path.home() / "GoogleDrive/Obsidian/Notebook/Universidad",
 )
+
+GDRIVE_FOLDER_ID = os.getenv("GDRIVE_FOLDER_ID", "")
+GDRIVE_CREDENTIALS_FILE = resolver_ruta("GDRIVE_CREDENTIALS_FILE", BASE_DIR / "credentials.json")
+GDRIVE_TOKEN_FILE = resolver_ruta("GDRIVE_TOKEN_FILE", DATA_DIR / "token.json")
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 AUTHORIZED_USER_ID = int(os.getenv("AUTHORIZED_USER_ID", "0"))

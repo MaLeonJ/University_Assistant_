@@ -47,3 +47,28 @@ def test_proveedor_sin_modelo_definido(monkeypatch):
 def test_cada_proveedor_tiene_modelo_por_defecto():
     for proveedor in config.VALID_PROVIDERS:
         assert config.DEFAULT_MODELS.get(proveedor)
+
+
+# ---------- resolución de rutas del .env ----------
+
+
+def test_ruta_sin_env_usa_default(monkeypatch):
+    monkeypatch.delenv("RUTA_PRUEBA", raising=False)
+    assert config.resolver_ruta("RUTA_PRUEBA", config.BASE_DIR / "x") == (config.BASE_DIR / "x")
+
+
+def test_ruta_absoluta_se_respeta(monkeypatch, tmp_path):
+    monkeypatch.setenv("RUTA_PRUEBA", str(tmp_path / "absoluto"))
+    assert config.resolver_ruta("RUTA_PRUEBA", config.BASE_DIR / "x") == (tmp_path / "absoluto")
+
+
+def test_ruta_relativa_se_ancla_al_proyecto(monkeypatch):
+    monkeypatch.setenv("RUTA_PRUEBA", "salida/docs")
+    resuelta = config.resolver_ruta("RUTA_PRUEBA", config.BASE_DIR / "x")
+    assert resuelta == (config.BASE_DIR / "salida" / "docs").resolve()
+
+
+def test_ruta_con_usuario_expandible(monkeypatch):
+    monkeypatch.setenv("RUTA_PRUEBA", "~/apuntes")
+    resuelta = config.resolver_ruta("RUTA_PRUEBA", config.BASE_DIR / "x")
+    assert resuelta.is_absolute() and "apuntes" in resuelta.parts[-1]
