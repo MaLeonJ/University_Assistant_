@@ -392,11 +392,20 @@ async def _investigar(destino, title: str, topics: list[str]) -> None:
 
     path = write_document(title, topics, sections, results_by_topic)
 
+    drive_status = ""
+    if drive.estado() is None:
+        try:
+            await asyncio.to_thread(drive.sync_drive)
+            drive_status = "\n☁️ *Sincronizado a Google Drive*"
+        except drive.DriveError as e:
+            logger.warning("Auto-sync a Drive falló: %s", e)
+
     used, limit = get_usage()
-    await destino.reply_text(
-        f"✅ Documento listo:\n`{path.name}`\n\n📊 Llamadas a la IA hoy: {used}/{limit}",
-        parse_mode="Markdown",
+    texto_resumen = (
+        f"✅ Documento listo:\n`{path.name}`{drive_status}\n\n"
+        f"📊 Llamadas a la IA hoy: {used}/{limit}"
     )
+    await destino.reply_text(texto_resumen, parse_mode="Markdown")
     await show_menu(destino)
 
 

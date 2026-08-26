@@ -15,7 +15,7 @@ from typing import Annotated
 
 import typer
 
-from . import cache, exporter, indexer
+from . import cache, drive, exporter, indexer
 from .config import SEARCH_MAX_RESULTS, validate
 from .parser import parse_message
 from .pipeline import research_topics
@@ -58,6 +58,13 @@ def investigar(
     typer.echo(f"🔎 Investigando {len(topics)} tema(s) de «{title}»...")
     secciones, fuentes = asyncio.run(research_topics(topics, SEARCH_MAX_RESULTS))
     path = write_document(title, topics, secciones, fuentes)
+
+    if drive.estado() is None:
+        try:
+            drive.sync_drive()
+            typer.secho("☁️ Sincronizado a Google Drive", fg=typer.colors.CYAN)
+        except drive.DriveError as e:
+            typer.secho(f"⚠️ Auto-sync a Drive falló: {e}", fg=typer.colors.YELLOW)
 
     usadas, _ = get_usage()
     typer.secho(f"✅ {path}", fg=typer.colors.GREEN)

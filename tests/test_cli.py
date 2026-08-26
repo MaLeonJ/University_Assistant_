@@ -70,6 +70,26 @@ def test_investigar_genera_documento(monkeypatch):
     assert "2 tema(s)" in resultado.output
 
 
+def test_investigar_auto_sync_drive_exitoso(monkeypatch):
+    import asistente.drive as drive
+
+    sincronizado = []
+    monkeypatch.setattr(cli, "validate", lambda: [])
+    monkeypatch.setattr(drive, "estado", lambda: None)
+    monkeypatch.setattr(drive, "sync_drive", lambda: sincronizado.append(True))
+
+    async def fake_pipeline(topics, max_results=None):
+        return [f"sección-{t}" for t in topics], {t: [] for t in topics}
+
+    monkeypatch.setattr(cli, "research_topics", fake_pipeline)
+
+    resultado = runner.invoke(cli.app, ["investigar", "corte 1: bases de datos"])
+
+    assert resultado.exit_code == 0, resultado.output
+    assert sincronizado == [True]
+    assert "Sincronizado a Google Drive" in resultado.output
+
+
 # ---------- buscar ----------
 
 

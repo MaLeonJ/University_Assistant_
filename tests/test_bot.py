@@ -332,6 +332,38 @@ def test_investigacion_completa(usage_file):
     assert len(creados) == 2
 
 
+def test_investigacion_auto_sync_drive_exitoso(usage_file, monkeypatch):
+    import asistente.drive as drive
+
+    sincronizado = []
+
+    def fake_sync():
+        sincronizado.append(True)
+        return {"nuevos": 1, "actualizados": 0, "total": 1}
+
+    monkeypatch.setattr(drive, "estado", lambda: None)
+    monkeypatch.setattr(drive, "sync_drive", fake_sync)
+
+    msg = FakeMessage(text="tipos de datos")
+    run(bot.handle_message(fake_update(message=msg), CTX))
+    assert sincronizado == [True]
+    assert any("Sincronizado a Google Drive" in t for t in msg.reply_texts)
+
+
+def test_investigacion_auto_sync_drive_falla_no_rompe(usage_file, monkeypatch):
+    import asistente.drive as drive
+
+    def explotar():
+        raise drive.DriveError("Fallo de red")
+
+    monkeypatch.setattr(drive, "estado", lambda: None)
+    monkeypatch.setattr(drive, "sync_drive", explotar)
+
+    msg = FakeMessage(text="tipos de datos")
+    run(bot.handle_message(fake_update(message=msg), CTX))
+    assert any("Documento listo" in t for t in msg.reply_texts)
+
+
 def output_docs():
     import asistente.writer as writer
 
