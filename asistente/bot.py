@@ -2,6 +2,7 @@ import asyncio
 import html
 import logging
 import re
+from pathlib import Path
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -14,7 +15,7 @@ from telegram.ext import (
     filters,
 )
 
-from . import cache, drive, exporter, indexer
+from . import cache, drive, exporter, indexer, materias
 from .analyzer import extract_topics_from_image
 from .config import (
     AUTHORIZED_USER_ID,
@@ -53,12 +54,14 @@ HELP_TEXT = (
     "*Comandos:*\n"
     "/menu — abrir el menú de opciones\n"
     "/docs — ver documentos generados\n"
+    "/materias — gestionar tus asignaturas del trimestre\n"
     "/buscar — buscar en tu biblioteca (full-text)\n"
     "/exportar — descargar un documento como PDF o DOCX\n"
-    "/sync — sincronizar a Obsidian local o Google Drive\n"
     "/uso — cuántas llamadas a la IA te quedan hoy\n"
     "/stats — resumen de biblioteca y consumo\n"
     "/logs — ver los últimos errores registrados\n\n"
+    "🔄 *Sincronización:* Los documentos se sincronizan automáticamente "
+    "con Google Drive y tu Obsidian local (Syncthing).\n\n"
     "📷 También puedes enviar una *foto* del pizarrón o apuntes: la leeré, "
     "detectaré los temas y *elegirás con botones* cuáles investigar. "
     "Puedes abortar en cualquier momento con /cancel."
@@ -68,10 +71,10 @@ MENU_KEYBOARD = InlineKeyboardMarkup(
     [
         [
             InlineKeyboardButton("📚 Documentos", callback_data="docs"),
-            InlineKeyboardButton("📊 Uso de IA", callback_data="uso"),
+            InlineKeyboardButton("📖 Materias", callback_data="materias"),
         ],
         [
-            InlineKeyboardButton("🔄 Sincronizar", callback_data="sync"),
+            InlineKeyboardButton("📊 Uso de IA", callback_data="uso"),
             InlineKeyboardButton("📈 Estadísticas", callback_data="stats"),
         ],
         [
@@ -377,20 +380,193 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
     elif query.data == "ayuda":
         await query.edit_message_text(HELP_TEXT, parse_mode="Markdown")
+    elif query.data == "materias":
+        text, kb = materias_text()
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
+    elif query.data == "mat_add":
+        user_data = context.user_data
+        if user_data is not None:
+            user_data["esperando_materia"] = True
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("↩️ Cancelar", callback_data="materias")]])
+        await query.edit_message_text(
+            "➕ *Agregar nueva materia*\n\n"
+            "Escribe a continuación el nombre de la asignatura que deseas agregar:",
+            parse_mode="Markdown",
+            reply_markup=kb,
+        )
+    elif query.data.startswith("mat_del:"):
+        nombre = query.data.split(":", 1)[1]
+        materias.eliminar_materia(nombre)
+        text, kb = materias_text()
+        await query.answer("Materia eliminada")
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
+    elif query.data.startswith("mat_set:"):
+        nombre = query.data.split(":", 1)[1]
+        materias.set_materia_activa(nombre)
+        text, kb = materias_text()
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
+    elif query.data.startswith("modo:"):
+        nuevo_modo = query.data.split(":", 1)[1]
+        user_data = context.user_data
+        if user_data and "pend_res" in user_data:
+            user_data["pend_res"]["modo"] = nuevo_modo
+            topics = user_data["pend_res"].get("topics", [])
+            inc_modo = len(topics) > 1
+            await query.edit_message_reply_markup(
+                reply_markup=teclado_selector_materias(modo=nuevo_modo, incluir_modo=inc_modo)
+            )
+    elif query.data.startswith("mat_sel:"):
+        op = query.data.split(":", 1)[1]
+        mat: str | None = None
+        if op == "activa":
+            mat = materias.get_materia_activa()
+        elif op != "ninguna":
+            try:
+                idx = int(op)
+                lista = materias.get_materias()
+                if 0 <= idx < len(lista):
+                    mat = lista[idx]
+            except ValueError:
+                mat = None
+
+        user_data = context.user_data
+        pend = user_data.pop("pend_res", None) if user_data else None
+        if pend:
+            modo = pend.get("modo", "unificado")
+            await query.edit_message_text("👍 Iniciando investigación...")
+            assert query.message is not None
+            await _investigar(query.message, pend["title"], pend["topics"], materia=mat, modo=modo)
+        else:
+            await query.edit_message_text("⚠️ La solicitud de investigación expiró.")
 
 
-async def _investigar(destino, title: str, topics: list[str]) -> None:
+def materias_text() -> tuple[str, InlineKeyboardMarkup]:
+    lista = materias.get_materias()
+    activa = materias.get_materia_activa()
+    lines = ["📖 *Materias del Trimestre*\n"]
+    filas = []
+
+    if not lista:
+        lines.append(
+            "Aún no tienes materias configuradas.\n\n"
+            "Pulsa *➕ Agregar materia* o usa `/materias agregar <Nombre>`."
+        )
+    else:
+        lines.append(f"📌 Materia activa por defecto: *{activa or 'Ninguna'}*\n")
+        lines.append("Toca una materia para activarla por defecto, o 🗑️ para eliminarla:\n")
+        for m in lista:
+            prefix = "⭐ " if m == activa else "📖 "
+            filas.append(
+                [
+                    InlineKeyboardButton(f"{prefix}{m}", callback_data=f"mat_set:{m}"),
+                    InlineKeyboardButton("🗑️", callback_data=f"mat_del:{m}"),
+                ]
+            )
+
+    filas.append([InlineKeyboardButton("➕ Agregar materia", callback_data="mat_add")])
+    filas.append([InlineKeyboardButton("↩️ Menú", callback_data="menu")])
+    return "\n".join(lines), InlineKeyboardMarkup(filas)
+
+
+async def materias_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    assert update.message is not None
+    args = context.args or []
+    if args:
+        subcmd = args[0].lower()
+        nombre = " ".join(args[1:]).strip()
+        if subcmd == "agregar" and nombre:
+            if materias.agregar_materia(nombre):
+                await update.message.reply_text(f"✅ Materia «{nombre}» agregada.")
+            else:
+                await update.message.reply_text(f"⚠️ La materia «{nombre}» ya existe o es inválida.")
+            return
+        elif subcmd == "eliminar" and nombre:
+            if materias.eliminar_materia(nombre):
+                await update.message.reply_text(f"🗑️ Materia «{nombre}» eliminada.")
+            else:
+                await update.message.reply_text(f"⚠️ No encontré la materia «{nombre}».")
+            return
+        elif subcmd == "activar" and nombre:
+            if materias.set_materia_activa(nombre):
+                await update.message.reply_text(f"📌 Materia activa fijada a: «{nombre}».")
+            else:
+                await update.message.reply_text(f"⚠️ La materia «{nombre}» no está en tu lista.")
+            return
+
+    text, keyboard = materias_text()
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
+def teclado_selector_materias(
+    modo: str = "unificado", incluir_modo: bool = True
+) -> InlineKeyboardMarkup:
+    lista = materias.get_materias()
+    activa = materias.get_materia_activa()
+    filas = []
+
+    if incluir_modo:
+        btn_uni = "✅ 📄 Todo en 1 doc" if modo == "unificado" else "📄 Todo en 1 doc"
+        btn_sep = "✅ 📚 Docs separados" if modo == "separado" else "📚 Docs separados"
+        filas.append(
+            [
+                InlineKeyboardButton(btn_uni, callback_data="modo:unificado"),
+                InlineKeyboardButton(btn_sep, callback_data="modo:separado"),
+            ]
+        )
+
+    if activa:
+        filas.append(
+            [InlineKeyboardButton(f"⭐ Usar activa ({activa})", callback_data="mat_sel:activa")]
+        )
+    for i, m in enumerate(lista):
+        if m != activa:
+            filas.append([InlineKeyboardButton(f"📖 {m}", callback_data=f"mat_sel:{i}")])
+    filas.append([InlineKeyboardButton("🌐 General / Ninguna", callback_data="mat_sel:ninguna")])
+    return InlineKeyboardMarkup(filas)
+
+
+async def _investigar(
+    destino,
+    title: str,
+    topics: list[str],
+    materia: str | None = None,
+    modo: str = "unificado",
+) -> None:
     """Ejecuta la investigación y responde sobre `destino` (mensaje de Telegram)."""
+    mat_text = f"\n📖 Asignatura: *{materia}*" if materia else ""
+    modo_text = (
+        "\n📚 Modo: *Un documento por tema*" if modo == "separado" and len(topics) > 1 else ""
+    )
     await destino.reply_text(
-        f"🔎 Investigando *{len(topics)} tema(s)* de «{title}»...\n_Esto puede tardar un poco._",
+        f"🔎 Investigando *{len(topics)} tema(s)* de «{title}»{mat_text}{modo_text}...\n"
+        "_Esto puede tardar un poco._",
         parse_mode="Markdown",
     )
     await destino.chat.send_action("typing")
 
-    sections, results_by_topic = await research_topics(topics, SEARCH_MAX_RESULTS)
-    logger.info("Investigación completa: %s", title)
+    if materia is not None:
+        sections, results_by_topic = await research_topics(
+            topics, SEARCH_MAX_RESULTS, materia=materia
+        )
+    else:
+        sections, results_by_topic = await research_topics(topics, SEARCH_MAX_RESULTS)
+    logger.info("Investigación completa: %s (Materia: %s, Modo: %s)", title, materia, modo)
 
-    path = write_document(title, topics, sections, results_by_topic)
+    rutas: list[Path] = []
+    if modo == "separado" and len(topics) > 1:
+        for topic, section in zip(topics, sections, strict=False):
+            doc_title = topic.strip().capitalize() if topic.strip() else topic
+            p = write_document(
+                doc_title,
+                [topic],
+                [section],
+                {topic: results_by_topic.get(topic, [])},
+                materia=materia,
+            )
+            rutas.append(p)
+    else:
+        p = write_document(title, topics, sections, results_by_topic, materia=materia)
+        rutas.append(p)
 
     drive_status = ""
     if drive.estado() is None:
@@ -401,22 +577,46 @@ async def _investigar(destino, title: str, topics: list[str]) -> None:
             logger.warning("Auto-sync a Drive falló: %s", e)
 
     used, limit = get_usage()
-    texto_resumen = (
-        f"✅ Documento listo:\n`{path.name}`{drive_status}\n\n"
-        f"📊 Llamadas a la IA hoy: {used}/{limit}"
-    )
+    if len(rutas) == 1:
+        doc_info = f"✅ Documento listo:\n`{rutas[0].name}`"
+    else:
+        nombres = "\n".join([f"• `{r.name}`" for r in rutas])
+        doc_info = f"✅ *{len(rutas)} documentos creados:*\n{nombres}"
+
+    texto_resumen = f"{doc_info}{drive_status}\n\n📊 Llamadas a la IA hoy: {used}/{limit}"
     await destino.reply_text(texto_resumen, parse_mode="Markdown")
     await show_menu(destino)
 
 
-async def research(update: Update, title: str, topics: list[str]) -> None:
+async def research(
+    update: Update,
+    title: str,
+    topics: list[str],
+    materia: str | None = None,
+    modo: str = "unificado",
+) -> None:
     assert update.message is not None
-    await _investigar(update.message, title, topics)
+    await _investigar(update.message, title, topics, materia=materia, modo=modo)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not authorized(update) or update.message is None:
         return
+
+    user_data = context.user_data if context is not None else None
+    if user_data and user_data.get("esperando_materia"):
+        user_data["esperando_materia"] = False
+        nombre_materia = (update.message.text or "").strip()
+        if nombre_materia:
+            if materias.agregar_materia(nombre_materia):
+                await update.message.reply_text(f"✅ Materia «{nombre_materia}» agregada.")
+            else:
+                await update.message.reply_text(
+                    f"⚠️ La materia «{nombre_materia}» ya existe o es inválida."
+                )
+            text, kb = materias_text()
+            await update.message.reply_text(text, parse_mode="Markdown", reply_markup=kb)
+            return
 
     parsed = parse_message(update.message.text or "")
     if parsed is None:
@@ -424,7 +624,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     title, topics = parsed
-    await research(update, title, topics)
+    lista = materias.get_materias()
+    incluir_modo = len(topics) > 1
+
+    if user_data is not None:
+        user_data["pend_res"] = {"title": title, "topics": topics, "modo": "unificado"}
+
+    if not lista and not incluir_modo:
+        await research(update, title, topics)
+        return
+
+    msg_extra = " (elige el modo de entrega y la materia):" if incluir_modo else ":"
+    await update.message.reply_text(
+        f"📖 *Configuración de Investigación*\n\n«*{title}*» ({len(topics)} tema(s)){msg_extra}",
+        parse_mode="Markdown",
+        reply_markup=teclado_selector_materias(modo="unificado", incluir_modo=incluir_modo),
+    )
 
 
 def teclado_temas(topics: list[str], sel: set[int]) -> InlineKeyboardMarkup:
@@ -518,7 +733,19 @@ async def foto_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         user_data.pop("foto", None)
         await query.answer()
         assert query.message is not None
-        await _investigar(query.message, title, temas)
+        lista = materias.get_materias()
+        incluir_modo = len(temas) > 1
+        if not lista and not incluir_modo:
+            await _investigar(query.message, title, temas)
+            return ConversationHandler.END
+
+        user_data["pend_res"] = {"title": title, "topics": temas, "modo": "unificado"}
+        msg_extra = " (elige el modo de entrega y la materia):" if incluir_modo else ":"
+        await query.edit_message_text(
+            f"📖 *Configuración de Investigación*\n\n«*{title}*» ({len(temas)} tema(s)){msg_extra}",
+            parse_mode="Markdown",
+            reply_markup=teclado_selector_materias(modo="unificado", incluir_modo=incluir_modo),
+        )
         return ConversationHandler.END
 
     idx = int(accion.split(":")[1])
@@ -557,9 +784,11 @@ def main() -> None:
     app.add_handler(CommandHandler("buscar", buscar_command))
     app.add_handler(CommandHandler("exportar", exportar_command))
     app.add_handler(CommandHandler("logs", logs_command))
+    app.add_handler(CommandHandler("materias", materias_command))
     app.add_handler(
         CallbackQueryHandler(
-            button, pattern=r"^(docs|uso|logs|stats|ayuda|menu|sync(:local|:drive)?)$"
+            button,
+            pattern=r"^(docs|uso|logs|stats|ayuda|menu|sync(:local|:drive)?|materias|mat_add|mat_del:.*|mat_set:.*|mat_sel:.*|modo:.*)$",
         )
     )
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

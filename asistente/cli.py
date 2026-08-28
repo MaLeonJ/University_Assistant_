@@ -11,11 +11,12 @@ Instalación del comando global (tras editar pyproject):
 """
 
 import asyncio
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from . import cache, drive, exporter, indexer
+from . import cache, drive, exporter, indexer, materias
 from .config import SEARCH_MAX_RESULTS, validate
 from .parser import parse_message
 from .pipeline import research_topics
@@ -40,6 +41,12 @@ def _plano(texto: str) -> str:
 @app.command()
 def investigar(
     temario: Annotated[str, typer.Argument(help="Tema o 'título: tema1, tema2'")],
+    materia: Annotated[
+        str | None, typer.Option("--materia", "-m", help="Asignatura o materia de estudio")
+    ] = None,
+    separar: Annotated[
+        bool, typer.Option("--separar", "-s", help="Generar un documento por cada tema")
+    ] = False,
 ) -> None:
     """Investiga en la web y genera un documento Markdown."""
     errores = validate()
@@ -55,9 +62,32 @@ def investigar(
         raise typer.Exit(code=1)
 
     title, topics = parsed
-    typer.echo(f"🔎 Investigando {len(topics)} tema(s) de «{title}»...")
-    secciones, fuentes = asyncio.run(research_topics(topics, SEARCH_MAX_RESULTS))
-    path = write_document(title, topics, secciones, fuentes)
+    mat_efectiva = materia or materias.get_materia_activa()
+    mat_info = f" [Materia: {mat_efectiva}]" if mat_efectiva else ""
+    modo_info = " [Modo: Separados]" if separar and len(topics) > 1 else ""
+    typer.echo(f"🔎 Investigando {len(topics)} tema(s) de «{title}»{mat_info}{modo_info}...")
+    if mat_efectiva is not None:
+        secciones, fuentes = asyncio.run(
+            research_topics(topics, SEARCH_MAX_RESULTS, materia=mat_efectiva)
+        )
+    else:
+        secciones, fuentes = asyncio.run(research_topics(topics, SEARCH_MAX_RESULTS))
+
+    rutas: list[Path] = []
+    if separar and len(topics) > 1:
+        for t, sec in zip(topics, secciones, strict=False):
+            doc_title = t.strip().capitalize() if t.strip() else t
+            p = write_document(
+                doc_title,
+                [t],
+                [sec],
+                {t: fuentes.get(t, [])},
+                materia=mat_efectiva,
+            )
+            rutas.append(p)
+    else:
+        p = write_document(title, topics, secciones, fuentes, materia=mat_efectiva)
+        rutas.append(p)
 
     if drive.estado() is None:
         try:
@@ -67,8 +97,57 @@ def investigar(
             typer.secho(f"⚠️ Auto-sync a Drive falló: {e}", fg=typer.colors.YELLOW)
 
     usadas, _ = get_usage()
-    typer.secho(f"✅ {path}", fg=typer.colors.GREEN)
+    for r in rutas:
+        typer.secho(f"✅ {r}", fg=typer.colors.GREEN)
     typer.echo(f"Llamadas IA hoy: {usadas}")
+
+
+@app.command(name="materias")
+def materias_cli(
+    accion: Annotated[
+        str | None, typer.Argument(help="listar | agregar | eliminar | activar")
+    ] = None,
+    nombre: Annotated[str | None, typer.Argument(help="Nombre de la asignatura")] = None,
+) -> None:
+    """Gestiona las materias del trimestre."""
+    if not accion or accion.lower() == "listar":
+        lista = materias.get_materias()
+        activa = materias.get_materia_activa()
+        if not lista:
+            typer.echo("No tienes materias configuradas.")
+            return
+        typer.secho("📖 Materias configuradas:", fg=typer.colors.CYAN, bold=True)
+        for m in lista:
+            prefix = "⭐ [ACTIVA] " if m == activa else "  "
+            typer.echo(f"{prefix}{m}")
+        return
+
+    subcmd = accion.lower()
+    if not nombre:
+        typer.secho("Debes especificar el nombre de la materia.", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    if subcmd == "agregar":
+        if materias.agregar_materia(nombre):
+            typer.secho(f"✅ Materia «{nombre}» agregada.", fg=typer.colors.GREEN)
+        else:
+            typer.secho(f"⚠️ La materia «{nombre}» ya existe o es inválida.", fg=typer.colors.YELLOW)
+    elif subcmd == "eliminar":
+        if materias.eliminar_materia(nombre):
+            typer.secho(f"🗑️ Materia «{nombre}» eliminada.", fg=typer.colors.GREEN)
+        else:
+            typer.secho(f"⚠️ No existe la materia «{nombre}».", fg=typer.colors.YELLOW)
+    elif subcmd == "activar":
+        if materias.set_materia_activa(nombre):
+            typer.secho(f"📌 Materia activa: «{nombre}».", fg=typer.colors.GREEN)
+        else:
+            typer.secho(f"⚠️ La materia «{nombre}» no está en tu lista.", fg=typer.colors.YELLOW)
+    else:
+        typer.secho(
+            f"Acción inválida '{accion}'. Opciones: listar, agregar, eliminar, activar.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
 
 
 @app.command()

@@ -18,15 +18,18 @@ class SearchResult:
     snippet: str
 
 
-def search_topic(topic: str, max_results: int | None = None) -> list[SearchResult]:
+def search_topic(
+    topic: str, max_results: int | None = None, materia: str | None = None
+) -> list[SearchResult]:
     max_results = max_results or SEARCH_MAX_RESULTS
     results: list[SearchResult] = []
     last_error = None
+    query = f"{topic} {materia} explicación" if materia else f"{topic} explicación"
 
     for attempt in range(1, RETRIES + 1):
         try:
             with DDGS() as ddgs:
-                raw = ddgs.text(f"{topic} explicación", max_results=max_results)
+                raw = ddgs.text(query, max_results=max_results)
                 for r in raw:
                     results.append(
                         SearchResult(

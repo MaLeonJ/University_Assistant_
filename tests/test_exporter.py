@@ -138,10 +138,12 @@ def md_doc(tmp_path):
     return doc
 
 
-def write_doc(anio: str, mes: str, nombre: str, contenido: str = "# X\nhola\n") -> Path:
+def write_doc(
+    anio: str, mes: str, nombre: str, contenido: str = "# X\nhola\n", materia: str = "General"
+) -> Path:
     from asistente.writer import OUTPUT_DIR
 
-    carpeta = OUTPUT_DIR / anio / mes
+    carpeta = OUTPUT_DIR / materia / anio / mes
     carpeta.mkdir(parents=True, exist_ok=True)
     doc = carpeta / f"{nombre}.md"
     doc.write_text(contenido, encoding="utf-8")

@@ -5,7 +5,7 @@ import asistente.indexer as indexer
 
 @pytest.fixture
 def biblioteca(tmp_path, monkeypatch):
-    docs = tmp_path / "documentos" / "2026" / "08-agosto"
+    docs = tmp_path / "documentos" / "General" / "2026" / "08-agosto"
     docs.mkdir(parents=True)
     (docs / "01_1200_ecuaciones.md").write_text(
         "---\ntags: [x]\n---\n# Ecuaciones Diferenciales\n\n"
@@ -54,7 +54,7 @@ def test_busqueda_encuentra_y_extrae_titulo_mes(biblioteca):
     assert len(resultados) == 1
     r = resultados[0]
     assert r["title"] == "Ecuaciones Diferenciales"
-    assert r["month"] == "2026/08-agosto"
+    assert r["month"] == "General/2026/08-agosto"
     assert "«" in r["snippet"] and "»" in r["snippet"]
 
 

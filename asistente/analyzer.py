@@ -36,13 +36,14 @@ Requisitos:
 Responde ÚNICAMENTE con el contenido en Markdown."""
 
 
-def analyze_topic(topic: str, results: list[SearchResult]) -> str:
+def analyze_topic(topic: str, results: list[SearchResult], materia: str | None = None) -> str:
     if not results:
         return "_No se encontraron resultados de búsqueda para este tema._"
 
     sources = "\n".join(f"- **{r.title}** — {r.snippet} (URL: {r.url})" for r in results)
+    topic_str = f"{topic} (en el contexto de: {materia})" if materia else topic
     try:
-        text = generate(PROMPT.format(topic=topic, sources=sources), system=SYSTEM_PROMPT)
+        text = generate(PROMPT.format(topic=topic_str, sources=sources), system=SYSTEM_PROMPT)
         if not text:
             logger.warning("Respuesta vacía del proveedor de IA para '%s'", topic)
             return _fallback(topic, results)

@@ -7,8 +7,8 @@ from asistente.syncer import _igual, _md5, sync_documents, sync_text
 
 @pytest.fixture
 def biblioteca(output_dirs):
-    origen = output_dirs["out"] / "2026" / "08-agosto"
-    destino = output_dirs["vault"] / "2026" / "08-agosto"
+    origen = output_dirs["out"] / "General" / "2026" / "08-agosto"
+    destino = output_dirs["vault"] / "General" / "2026" / "08-agosto"
     origen.mkdir(parents=True)
     (origen / "a.md").write_text("contenido A", encoding="utf-8")
     return {"origen": origen, "destino": destino}

@@ -23,13 +23,16 @@ MESES = (
 INDEX_NAME = "00_Índice.md"
 
 
-def month_dir(dt: datetime) -> Path:
-    return OUTPUT_DIR / f"{dt:%Y}" / f"{dt.month:02d}-{MESES[dt.month - 1]}"
+def month_dir(dt: datetime, materia: str | None = None) -> Path:
+    mat_folder = materia.strip() if (materia and materia.strip()) else "General"
+    return OUTPUT_DIR / mat_folder / f"{dt:%Y}" / f"{dt.month:02d}-{MESES[dt.month - 1]}"
 
 
 def month_label(month_path: Path) -> str:
     nombre = month_path.name.split("-", 1)[1].capitalize()
-    return f"{nombre} {month_path.parent.name}"
+    year = month_path.parent.name
+    materia = month_path.parent.parent.name
+    return f"{materia} — {nombre} {year}"
 
 
 def write_document(
@@ -37,9 +40,10 @@ def write_document(
     topics: list[str],
     sections: list[str],
     results_by_topic: dict[str, list[SearchResult]],
+    materia: str | None = None,
 ) -> Path:
     now = datetime.now()
-    doc_dir = month_dir(now)
+    doc_dir = month_dir(now, materia)
     doc_dir.mkdir(parents=True, exist_ok=True)
 
     path = doc_dir / f"{now:%d_%H-%M}_{slugify(title)}.md"
@@ -48,9 +52,23 @@ def write_document(
         path = doc_dir / f"{now:%d_%H-%M}_{slugify(title)}-{n}.md"
         n += 1
 
+    tags = ["universidad", "investigacion"]
+    materia_header = ""
+    materia_line = ""
+    if materia:
+        tag_m = slugify(materia)
+        if tag_m and tag_m not in tags:
+            tags.append(tag_m)
+        materia_line = f'materia: "{materia}"\n'
+        materia_header = f" — 📖 *{materia}*"
+
     lines = [
         "---",
-        "tags: [universidad, investigacion]",
+        f"tags: [{', '.join(tags)}]",
+    ]
+    if materia_line:
+        lines.append(materia_line.strip())
+    lines += [
         f"fecha: {now:%Y-%m-%d}",
         f"hora: {now:%H-%M}",
         "---",
@@ -61,7 +79,7 @@ def write_document(
         + ("tema" if len(topics) == 1 else "temas")
         + "**, generada automáticamente a partir de fuentes web.",
         "",
-        f"> 📚 *Asistente Universitario* — 🗓️ {now:%d/%m/%Y} · {now:%H:%M}",
+        f"> 📚 *Asistente Universitario*{materia_header} — 🗓️ {now:%d/%m/%Y} · {now:%H:%M}",
         "",
         "## Índice",
         "",
@@ -82,6 +100,7 @@ def write_document(
 def update_index(doc_dir: Path) -> Path:
     docs = _docs_in(doc_dir)
     year = doc_dir.parent.name
+    materia_nombre = doc_dir.parent.parent.name
     mes_nombre = doc_dir.name.split("-", 1)[1].capitalize()
 
     entries = [
@@ -95,7 +114,7 @@ def update_index(doc_dir: Path) -> Path:
         f"fecha: {datetime.now():%Y-%m-%d}",
         "---",
         "",
-        f"# 📚 Índice — {mes_nombre} {year}",
+        f"# 📚 Índice — {materia_nombre} · {mes_nombre} {year}",
         "",
         f"**Total:** {len(docs)} documento(s)",
         "",
@@ -122,13 +141,16 @@ def list_months() -> list[tuple[Path, list[Path]]]:
     months: list[tuple[Path, list[Path]]] = []
     if not OUTPUT_DIR.exists():
         return months
-    years = sorted((d for d in OUTPUT_DIR.iterdir() if d.is_dir()), reverse=True)
-    for year_dir in years:
-        meses = sorted((d for d in year_dir.iterdir() if d.is_dir()), reverse=True)
-        for m in meses:
-            docs = _docs_in(m)
-            if docs:
-                months.append((m, docs))
+    materia_dirs = sorted(d for d in OUTPUT_DIR.iterdir() if d.is_dir())
+    for mat_dir in materia_dirs:
+        years = sorted((d for d in mat_dir.iterdir() if d.is_dir()), reverse=True)
+        for year_dir in years:
+            meses = sorted((d for d in year_dir.iterdir() if d.is_dir()), reverse=True)
+            for m in meses:
+                docs = _docs_in(m)
+                if docs:
+                    months.append((m, docs))
+    months.sort(key=lambda item: (item[0].parent.name, item[0].name), reverse=True)
     return months
 
 

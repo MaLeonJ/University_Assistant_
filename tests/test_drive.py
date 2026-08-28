@@ -104,7 +104,7 @@ def remoto(monkeypatch, tmp_path):
 
 
 def crear_biblioteca(out: Path) -> None:
-    mes = out / "2026" / "08-agosto"
+    mes = out / "General" / "2026" / "08-agosto"
     mes.mkdir(parents=True)
     (mes / "a.md").write_text("contenido A", encoding="utf-8")
 
@@ -149,7 +149,7 @@ def test_sync_inicial_sube_todo_y_crea_carpetas(output_dirs, remoto):
     crear_biblioteca(output_dirs["out"])
     r = sync_drive()
     assert r == {"nuevos": 1, "actualizados": 0, "total": 1}
-    assert len(remoto.carpetas) == 2  # 2026 y 08-agosto
+    assert len(remoto.carpetas) == 3  # General, 2026 y 08-agosto
 
 
 def test_sync_es_incremental(output_dirs, remoto):
@@ -161,7 +161,7 @@ def test_sync_es_incremental(output_dirs, remoto):
 def test_sync_detecta_contenido_modificado(output_dirs, remoto):
     crear_biblioteca(output_dirs["out"])
     sync_drive()
-    doc = output_dirs["out"] / "2026" / "08-agosto" / "a.md"
+    doc = output_dirs["out"] / "General" / "2026" / "08-agosto" / "a.md"
     doc.write_text("versión nueva", encoding="utf-8")
     assert sync_drive()["actualizados"] == 1
     md5s = [a["md5"] for a in remoto.archivos.values()]
@@ -171,15 +171,19 @@ def test_sync_detecta_contenido_modificado(output_dirs, remoto):
 def test_sync_respeta_estructura_de_carpetas(output_dirs, remoto):
     crear_biblioteca(output_dirs["out"])
     sync_drive()
+    gen = next(fid for fid, c in remoto.carpetas.items() if c["name"] == "General")
     anio = next(fid for fid, c in remoto.carpetas.items() if c["name"] == "2026")
     mes = next(fid for fid, c in remoto.carpetas.items() if c["name"] == "08-agosto")
+    assert remoto.carpetas[gen]["parent"] == "RAIZ"
+    assert remoto.carpetas[anio]["parent"] == gen
     assert remoto.carpetas[mes]["parent"] == anio
     archivo = next(iter(remoto.archivos.values()))
     assert archivo["parent"] == mes
 
 
 def test_sync_nunca_borra_del_destino(output_dirs, remoto):
-    viejo = remoto.nueva_carpeta("2026", "RAIZ")
+    gen = remoto.nueva_carpeta("General", "RAIZ")
+    viejo = remoto.nueva_carpeta("2026", gen)
     remoto.archivos["VIEJO"] = {"name": "viejo.md", "parent": viejo, "md5": "x"}
     crear_biblioteca(output_dirs["out"])
     sync_drive()
@@ -187,12 +191,13 @@ def test_sync_nunca_borra_del_destino(output_dirs, remoto):
 
 
 def test_sync_reusa_carpetas_existentes(output_dirs, remoto):
-    anio = remoto.nueva_carpeta("2026", "RAIZ")
+    gen = remoto.nueva_carpeta("General", "RAIZ")
+    anio = remoto.nueva_carpeta("2026", gen)
     remoto.nueva_carpeta("08-agosto", anio)
     crear_biblioteca(output_dirs["out"])
     r = sync_drive()
     assert r["nuevos"] == 1
-    assert len(remoto.carpetas) == 2
+    assert len(remoto.carpetas) == 3
 
 
 def test_sync_sin_directorio_origen(output_dirs, remoto):

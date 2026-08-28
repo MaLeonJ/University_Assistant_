@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 async def research_topics(
-    topics: list[str], max_results: int | None = None
+    topics: list[str], max_results: int | None = None, materia: str | None = None
 ) -> tuple[list[str], dict[str, list[SearchResult]]]:
     """Investiga todos los temas en paralelo.
 
@@ -28,7 +28,7 @@ async def research_topics(
     """
     total = len(topics)
     done = await asyncio.gather(
-        *(_research_one(i, total, topic, max_results) for i, topic in enumerate(topics, 1))
+        *(_research_one(i, total, topic, max_results, materia) for i, topic in enumerate(topics, 1))
     )
     sections = [section for section, _ in done]
     results_by_topic = {topic: results for topic, (_, results) in zip(topics, done, strict=True)}
@@ -36,20 +36,27 @@ async def research_topics(
 
 
 async def _research_one(
-    index: int, total: int, topic: str, max_results: int | None
+    index: int, total: int, topic: str, max_results: int | None, materia: str | None = None
 ) -> tuple[str, list[SearchResult]]:
-    results = await asyncio.to_thread(cache.get_search, topic)
+    cached_topic = f"{topic} [{materia}]" if materia else topic
+    results = await asyncio.to_thread(cache.get_search, cached_topic)
     origen = "cache"
     if results is None:
-        results = await asyncio.to_thread(search_topic, topic, max_results)
+        if materia is not None:
+            results = await asyncio.to_thread(search_topic, topic, max_results, materia)
+        else:
+            results = await asyncio.to_thread(search_topic, topic, max_results)
         if results:
-            await asyncio.to_thread(cache.put_search, topic, results)
+            await asyncio.to_thread(cache.put_search, cached_topic, results)
         origen = "web"
 
-    key = cache.analysis_key(topic, results, AI_PROVIDER, AI_MODEL)
+    key = cache.analysis_key(cached_topic, results, AI_PROVIDER, AI_MODEL)
     section = await asyncio.to_thread(cache.get_analysis, key)
     if section is None:
-        section = await asyncio.to_thread(analyze_topic, topic, results)
+        if materia is not None:
+            section = await asyncio.to_thread(analyze_topic, topic, results, materia)
+        else:
+            section = await asyncio.to_thread(analyze_topic, topic, results)
         if results and not is_fallback(section):
             await asyncio.to_thread(cache.put_analysis, key, section)
 

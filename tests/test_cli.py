@@ -29,7 +29,7 @@ def aislado(tmp_path, monkeypatch):
 
 @pytest.fixture
 def biblioteca(output_dirs):
-    origen = output_dirs["out"] / "2026" / "08-agosto"
+    origen = output_dirs["out"] / "General" / "2026" / "08-agosto"
     origen.mkdir(parents=True, exist_ok=True)
     (origen / "24_1000_derivadas.md").write_text(
         "# Derivadas\n\ncálculo diferencial aplicado.\n", encoding="utf-8"

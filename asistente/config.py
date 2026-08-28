@@ -18,6 +18,7 @@ def resolver_ruta(nombre_env: str, default: Path) -> Path:
 
 DATA_DIR = resolver_ruta("DATA_DIR", BASE_DIR / "data")
 USAGE_FILE = DATA_DIR / "usage.json"
+MATERIAS_FILE = DATA_DIR / "materias.json"
 CACHE_DB = DATA_DIR / "cache.db"
 CACHE_TTL_DAYS = int(os.getenv("CACHE_TTL_DAYS", "7"))
 INDEX_DB = DATA_DIR / "search.db"

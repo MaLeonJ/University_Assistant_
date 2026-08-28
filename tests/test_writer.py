@@ -25,19 +25,25 @@ RESULTADOS = {
 
 def test_month_dir_formato():
     d = month_dir(datetime(2026, 8, 23))
+    assert d.parent.parent.name == "General"
     assert d.parent.name == "2026"
     assert d.name == "08-agosto"
 
+    d_mat = month_dir(datetime(2026, 8, 23), materia="Física")
+    assert d_mat.parent.parent.name == "Física"
+    assert d_mat.parent.name == "2026"
+    assert d_mat.name == "08-agosto"
+
 
 def test_month_label():
-    ruta = month_dir(datetime(2026, 8, 23))
-    assert month_label(ruta) == "Agosto 2026"
+    ruta = month_dir(datetime(2026, 8, 23), materia="Física")
+    assert month_label(ruta) == "Física — Agosto 2026"
 
 
 def test_write_document_estructura_completa(output_dirs):
     path = write_document("Diagrama de Pareto", ["tema 1"], ["contenido"], RESULTADOS)
 
-    assert path.parent == output_dirs["out"] / "2026" / "08-agosto"
+    assert path.parent == output_dirs["out"] / "General" / "2026" / "08-agosto"
     assert re.match(r"\d{2}_\d{2}-\d{2}_diagrama-de-pareto\.md", path.name)
     text = path.read_text(encoding="utf-8")
     assert text.startswith("---\n")
@@ -80,9 +86,9 @@ def test_indice_autosanable_al_borrar_documento(output_dirs):
 def test_list_months_ordena_descendente(output_dirs):
     out = output_dirs["out"]
     write_document("Doc Viejo", ["t"], ["s"], {})
-    viejo = next(iter((out / "2026" / "08-agosto").glob("*doc-viejo*")))
+    viejo = next(iter((out / "General" / "2026" / "08-agosto").glob("*doc-viejo*")))
 
-    mes_anterior = out / "2025" / "12-diciembre"
+    mes_anterior = out / "General" / "2025" / "12-diciembre"
     mes_anterior.mkdir(parents=True)
     (mes_anterior / "01_10-00_doc.md").write_text("# Doc Antiguo\n")
 
@@ -104,7 +110,7 @@ def test_sources_section_deduplica_urls():
 
 
 def test_update_index_mes_vacio(output_dirs):
-    vacio = output_dirs["out"] / "2026" / "01-enero"
+    vacio = output_dirs["out"] / "General" / "2026" / "01-enero"
     vacio.mkdir(parents=True)
     indice = update_index(vacio)
     assert "Aún no hay documentos" in indice.read_text(encoding="utf-8")

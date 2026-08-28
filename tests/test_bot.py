@@ -45,12 +45,16 @@ class FakeQuery:
         self.data = data
         self.answers = []
         self.edits = []
+        self.message = FakeMessage()
 
     async def answer(self, text=None, **kwargs):
         self.answers.append(text)
 
     async def edit_message_text(self, text, **kwargs):
         self.edits.append(text)
+
+    async def edit_message_reply_markup(self, reply_markup=None, **kwargs):
+        self.edits.append("reply_markup_updated")
 
 
 def fake_update(message=None, query=None, user_id=1) -> Any:
@@ -227,7 +231,7 @@ def test_stats_text_y_comando(output_dirs, usage_file):
 
 @pytest.fixture
 def biblioteca_tmp(output_dirs):
-    origen = output_dirs["out"] / "2026" / "08-agosto"
+    origen = output_dirs["out"] / "General" / "2026" / "08-agosto"
     origen.mkdir(parents=True)
     (origen / "x.md").write_text("hola")
     return origen
@@ -305,6 +309,50 @@ def test_button_menu_vuelve_al_menu():
     query = FakeQuery("menu")
     run(bot.button(fake_update(query=query), CTX))
     assert any("¿Qué quieres hacer?" in e for e in query.edits)
+
+
+def test_button_mat_add_y_mat_del(tmp_path, monkeypatch):
+    import asistente.materias as materias
+
+    monkeypatch.setattr(materias, "MATERIAS_FILE", tmp_path / "materias.json")
+    materias.agregar_materia("Física I")
+
+    # mat_add
+    ctx = ctx_foto()
+    query = FakeQuery("mat_add")
+    run(bot.button(fake_update(query=query), ctx))
+    assert ctx.user_data.get("esperando_materia") is True
+    assert any("Agregar nueva materia" in e for e in query.edits)
+
+    # handle_message estando esperando_materia
+    msg = FakeMessage(text="Química General")
+    run(bot.handle_message(fake_update(message=msg), ctx))
+    assert ctx.user_data.get("esperando_materia") is False
+    assert "Química General" in materias.get_materias()
+
+    # mat_del
+    query_del = FakeQuery("mat_del:Química General")
+    run(bot.button(fake_update(query=query_del), ctx))
+    assert "Química General" not in materias.get_materias()
+
+
+def test_button_modo_y_ejecucion_separada(usage_file):
+    ctx = ctx_foto()
+    ctx.user_data["pend_res"] = {
+        "title": "Unidad 1",
+        "topics": ["tema 1", "tema 2"],
+        "modo": "unificado",
+    }
+
+    # Cambiar modo a separado
+    query_modo = FakeQuery("modo:separado")
+    run(bot.button(fake_update(query=query_modo), ctx))
+    assert ctx.user_data["pend_res"]["modo"] == "separado"
+
+    # Confirmar con mat_sel:ninguna
+    query_sel = FakeQuery("mat_sel:ninguna")
+    run(bot.button(fake_update(query=query_sel), ctx))
+    assert any("2 documentos creados" in t for t in query_sel.message.reply_texts)
 
 
 # ---------- mensajes de texto ----------
@@ -479,7 +527,7 @@ def test_generar_con_seleccion_investiga_solo_lo_elegido(monkeypatch):
     ctx.user_data["foto"] = {
         "title": "T",
         "topics": ["a", "b", "c"],
-        "sel": {0, 2},
+        "sel": {0},
     }
     investigados = []
 
@@ -492,8 +540,24 @@ def test_generar_con_seleccion_investiga_solo_lo_elegido(monkeypatch):
     estado = run(bot.foto_toggle(fake_update(query=q), ctx))
 
     assert estado == bot.ConversationHandler.END
-    assert investigados == [("T", ["a", "c"])]
+    assert investigados == [("T", ["a"])]
     assert "foto" not in ctx.user_data
+
+
+def test_generar_con_seleccion_multiples_temas_muestra_configuracion():
+    ctx = ctx_foto()
+    ctx.user_data["foto"] = {
+        "title": "T",
+        "topics": ["a", "b", "c"],
+        "sel": {0, 2},
+    }
+    q = fake_query_ft("ft:go")
+
+    estado = run(bot.foto_toggle(fake_update(query=q), ctx))
+
+    assert estado == bot.ConversationHandler.END
+    assert ctx.user_data["pend_res"]["topics"] == ["a", "c"]
+    assert any("Configuración de Investigación" in e for e in q.edits)
 
 
 def test_cancelar_por_boton():
@@ -595,7 +659,7 @@ def test_main_registra_handlers_y_arranca(monkeypatch):
 
     bot.main()
 
-    assert len(registrados) == 13
+    assert len(registrados) == 14
     assert len(errores) == 1
     assert estado["polling"]
 

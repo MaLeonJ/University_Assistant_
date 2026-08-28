@@ -57,6 +57,7 @@ select = [
 [tool.ruff.lint.per-file-ignores]
 # Los prompts son prosa en español: no se pueden partir sin alterarlos.
 "asistente/analyzer.py" = ["E501"]
+"asistente/bot.py" = ["RUF001"]
 
 [tool.mypy]
 python_version = "3.12"
